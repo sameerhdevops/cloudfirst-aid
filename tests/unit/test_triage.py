@@ -438,3 +438,41 @@ def test_triage_alb_does_not_treat_unrelated_group_as_alb_source() -> None:
     assert [f.description for f in triage_scenario("CFA-017", evidence)] == [
         f.description for f in triage_scenario("CFA-017", list(reversed(evidence)))
     ]
+
+
+def test_triage_alb_paginated_security_group_response_is_inconclusive() -> None:
+    """Do not confirm an absent ingress rule from a response with additional pages."""
+    from cloudfirst_aid.models import EvidenceItem
+
+    health = (
+        '{"TargetHealthDescriptions":[{"Target":{"Id":"i-12345","Port":9000},'
+        '"TargetHealth":{"State":"unhealthy","Reason":"Target.Timeout"}}]}'
+    )
+    alb = '{"LoadBalancers":[{"SecurityGroups":["sg-a1b123"]}]}'
+    first_page = json.dumps({
+        "SecurityGroupRules": [{
+            "GroupId": "sg-c4d456",
+            "IsEgress": False,
+            "FromPort": 8080,
+            "ToPort": 8080,
+            "IpProtocol": "tcp",
+            "ReferencedGroupId": "sg-e7f999",
+        }],
+        "NextToken": "more-pages-available",
+    })
+    evidence = [
+        EvidenceItem("E1", "CFA-017", "Target health", "aws elbv2 describe-target-health", health, "simulated"),
+        EvidenceItem("E2", "CFA-017", "Load balancer", "aws elbv2 describe-load-balancers", alb, "simulated"),
+        EvidenceItem("E3", "CFA-017", "Paged target rules", "aws ec2 describe-security-group-rules", first_page, "simulated"),
+    ]
+    findings = triage_scenario("CFA-017", evidence)
+    assert any(
+        f.status == FindingStatus.NEEDS_INVESTIGATION.value
+        and "incomplete" in f.description.lower()
+        for f in findings
+    )
+    assert not any(
+        f.status == FindingStatus.CONFIRMED.value
+        and "no observed ingress rule" in f.description.lower()
+        for f in findings
+    )
