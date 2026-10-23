@@ -16,5 +16,14 @@
     "observation": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"DenyUnencryptedTraffic\",\n      \"Effect\": \"Deny\",\n      \"Principal\": \"*\",\n      \"Action\": \"s3:*\",\n      \"Resource\": [\n        \"arn:aws:s3:::company-prod-data\",\n        \"arn:aws:s3:::company-prod-data/*\"\n      ],\n      \"Condition\": {\n        \"Bool\": {\n          \"aws:SecureTransport\": \"false\"\n        }\n      }\n    },\n    {\n      \"Sid\": \"RestrictToVpcEndpoint\",\n      \"Effect\": \"Deny\",\n      \"Principal\": \"*\",\n      \"Action\": \"s3:*\",\n      \"Resource\": \"arn:aws:s3:::company-prod-data/*\",\n      \"Condition\": {\n        \"StringNotEquals\": {\n          \"aws:sourceVpce\": \"vpce-1a2b3c4d\"\n        }\n      }\n    }\n  ]\n}",
     "provenance": "simulated",
     "limitations": "Bucket policy enforces an explicit Deny for any request not originating from VPC Endpoint vpce-1a2b3c4d."
+  },
+  {
+    "id": "SIM-EVID-CFA020-03",
+    "scenario_id": "CFA-020",
+    "description": "Caller network environment and endpoint inspection",
+    "source": "curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/",
+    "observation": "Caller is operating from an external developer workstation (public IP 198.51.100.25) with direct internet routing and no attached VPC endpoint interface.",
+    "provenance": "simulated",
+    "limitations": "Confirms caller request did not originate from VPC endpoint vpce-1a2b3c4d."
   }
 ]

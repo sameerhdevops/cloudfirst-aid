@@ -37,9 +37,9 @@ def load_evidence_fixtures(scenario_id: str, fixtures_dir: Path | None = None) -
 def format_evidence_record(item: EvidenceItem) -> str:
     """Format a single evidence item for display or report inclusion."""
     lines = [
-        f"Evidence: {item.id}",
+        f"Evidence: {redact_sensitive_fields(item.id)}",
         f"  Description: {redact_sensitive_fields(item.description)}",
-        f"  Source:      {item.source}",
+        f"  Source:      {redact_sensitive_fields(item.source)}",
         f"  Provenance:  {item.provenance}",
     ]
     if item.observation:
@@ -50,9 +50,9 @@ def format_evidence_record(item: EvidenceItem) -> str:
         for ol in obs_lines:
             lines.append(f"    {ol}")
     if item.limitations:
-        lines.append(f"  Limitations: {item.limitations}")
+        lines.append(f"  Limitations: {redact_sensitive_fields(item.limitations)}")
     if item.collected_at:
-        lines.append(f"  Collected:   {item.collected_at}")
+        lines.append(f"  Collected:   {redact_sensitive_fields(item.collected_at)}")
     return "\n".join(lines)
 
 
@@ -64,6 +64,9 @@ def redact_sensitive_fields(text: str) -> str:
     Preserves legitimate 40-character Git commit hashes and file hashes.
     """
     import re
+
+    if not text:
+        return text
 
     # 1. Complete PEM private key blocks (RSA, EC, OPENSSH, DSA, or unadorned)
     text = re.sub(
@@ -82,6 +85,11 @@ def redact_sensitive_fields(text: str) -> str:
         r"\g<1>[REDACTED TOKEN]",
         text,
     )
+    text = re.sub(
+        r"(?i)\b(authorization:\s*)(?:basic|bearer|token)\s+[A-Za-z0-9._~+/-]+=*",
+        r"\g<1>[REDACTED AUTH HEADER]",
+        text,
+    )
 
     # 4. Explicit password / secret assignment patterns
     text = re.sub(
@@ -93,8 +101,8 @@ def redact_sensitive_fields(text: str) -> str:
     # 5. Base64-like secret keys (40 chars), distinguishing them from 40-character Git commit hex hashes
     def _redact_secret_key(match: re.Match[str]) -> str:
         candidate = match.group(0)
-        # Preserve Git commit hashes (strictly 40 lowercase hexadecimal characters)
-        if re.fullmatch(r"[0-9a-f]{40}", candidate):
+        # Preserve Git commit hashes (strictly 40 lowercase hexadecimal characters) and 64-char sha256
+        if re.fullmatch(r"[0-9a-f]{40}", candidate) or re.fullmatch(r"[0-9a-f]{64}", candidate):
             return candidate
         return "[REDACTED]"
 

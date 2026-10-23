@@ -67,19 +67,25 @@ def generate_incident_report(
         lines.append("_No evidence records were provided for this investigation._\n")
     else:
         for idx, item in enumerate(evidence, 1):
+            sanitized_id = redact_sensitive_fields(item.id)
+            sanitized_desc = redact_sensitive_fields(item.description)
+            sanitized_src = redact_sensitive_fields(item.source)
+            sanitized_date = redact_sensitive_fields(item.collected_at) if item.collected_at else "Fixture / Undated"
+            sanitized_obs = redact_sensitive_fields(item.observation.strip())
+
             lines.extend([
-                f"### Evidence Item {idx}: `{item.id}` ({item.provenance.upper()})",
-                f"- **Description:** {item.description}",
-                f"- **Source Command / API:** `{item.source}`",
-                f"- **Recorded At:** {item.collected_at or 'Fixture / Undated'}",
+                f"### Evidence Item {idx}: `{sanitized_id}` ({item.provenance.upper()})",
+                f"- **Description:** {sanitized_desc}",
+                f"- **Source Command / API:** `{sanitized_src}`",
+                f"- **Recorded At:** {sanitized_date}",
                 "",
                 "```text",
-                redact_sensitive_fields(item.observation.strip()),
+                sanitized_obs,
                 "```",
                 "",
             ])
             if item.limitations:
-                lines.append(f"> **Known Limitation:** {item.limitations}\n")
+                lines.append(f"> **Known Limitation:** {redact_sensitive_fields(item.limitations)}\n")
 
     lines.extend([
         "## 3. Triage & Diagnostic Findings",
@@ -93,14 +99,16 @@ def generate_incident_report(
     else:
         for idx, finding in enumerate(findings, 1):
             badge = finding.status.upper()
+            sanitized_desc = redact_sensitive_fields(finding.description)
             lines.extend([
-                f"### Finding {idx}: [{badge}] {finding.description}",
+                f"### Finding {idx}: [{badge}] {sanitized_desc}",
                 f"- **Status:** `{finding.status}`",
             ])
             if finding.evidence_ids:
-                lines.append(f"- **Supporting Evidence:** {', '.join(finding.evidence_ids)}")
+                sanitized_eids = [redact_sensitive_fields(eid) for eid in finding.evidence_ids]
+                lines.append(f"- **Supporting Evidence:** {', '.join(sanitized_eids)}")
             if finding.explanation:
-                lines.append(f"- **Diagnostic Explanation:** {finding.explanation}")
+                lines.append(f"- **Diagnostic Explanation:** {redact_sensitive_fields(finding.explanation)}")
             lines.append("")
 
     lines.extend([

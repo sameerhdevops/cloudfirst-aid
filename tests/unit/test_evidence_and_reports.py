@@ -125,3 +125,54 @@ def test_write_incident_report_to_disk(tmp_path: Path) -> None:
 
     assert written_path.exists()
     assert written_path.read_text(encoding="utf-8") == report_md
+
+
+def test_format_evidence_record_redacts_all_fields() -> None:
+    """Verify format_evidence_record sanitizes id, description, source, observation, and limitations."""
+    secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    item = EvidenceItem(
+        id="EVID-AKIAIOSFODNN7EXAMPLE",
+        scenario_id="CFA-001",
+        description=f"Token with {secret_key}",
+        source="curl -H 'Authorization: Bearer mysecrettoken123' https://api.aws.com",
+        observation="account 123456789012 error",
+        provenance="simulated",
+        limitations="Contains password=supersecretpass",
+    )
+    formatted = format_evidence_record(item)
+    assert "AKIAIOSFODNN7EXAMPLE" not in formatted
+    assert "AKIA****************" in formatted
+    assert secret_key not in formatted
+    assert "mysecrettoken123" not in formatted
+    assert "123456789012" not in formatted
+    assert "supersecretpass" not in formatted
+
+
+def test_generate_incident_report_redacts_findings_and_evidence(catalog: list[Scenario]) -> None:
+    """Verify generate_incident_report sanitizes sensitive strings in findings and evidence metadata."""
+    scenario = catalog[0]
+    secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    evidence = [
+        EvidenceItem(
+            id="EVID-1",
+            scenario_id=scenario.id,
+            description=f"Secret {secret}",
+            source="aws sts get-caller-identity",
+            observation="Account: 123456789012",
+            provenance="simulated",
+        )
+    ]
+    findings = [
+        Finding(
+            description="Leaked password=mysecretpassword",
+            status="confirmed",
+            evidence_ids=["EVID-1"],
+            explanation="Caller key AKIAIOSFODNN7EXAMPLE had invalid rights",
+        )
+    ]
+    report_md = generate_incident_report(scenario, evidence, findings)
+    assert secret not in report_md
+    assert "123456789012" not in report_md
+    assert "mysecretpassword" not in report_md
+    assert "AKIAIOSFODNN7EXAMPLE" not in report_md
+

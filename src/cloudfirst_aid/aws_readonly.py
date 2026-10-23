@@ -105,4 +105,4 @@ def inspect_ec2_instance_readonly(instance_id: str, region_name: str | None = No
         return evidence
 
     except (BotoCoreError, ClientError) as err:
-        raise RuntimeError(f"AWS Read-Only API call failed: {err}") from err
+        raise RuntimeError(f"AWS Read-Only API call failed: {redact_sensitive_fields(str(err))}") from err

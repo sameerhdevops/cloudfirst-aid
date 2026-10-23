@@ -21,8 +21,8 @@ It teaches and demonstrates how an engineer investigates an operational issue, c
 - **14 Field Runbooks:** Detailed troubleshooting guides covering diagnostic logic, command explanations, root-cause differentiation, remediation, verification, and interview questions.
 - **Deterministic Diagnostic Engine:** Evaluates structured evidence fixtures against diagnostic rules to derive findings (`OBSERVED`, `SUPPORTED`, `CONFIRMED`) without guesswork.
 - **Incident Report Generator:** Compiles scenarios, evidence items, and findings into structured Markdown post-mortem incident reports.
-- **Automated Quality Gates:** Full unit test suite (32 tests passing), Ruff static linting, and multi-version Python CI (3.10 - 3.14).
-- **Zero Cloud Charges:** Works 100% offline without AWS credentials, credit cards, or cloud billing.
+- **Automated Quality Gates:** Full unit test suite (46 tests passing), Ruff static linting, and multi-version Python CI (3.10 - 3.14).
+- **Zero Cloud Charges:** Works offline by default without requiring AWS credentials, credit cards, or cloud billing, with optional live AWS read-only inspection.
 
 ---
 
@@ -228,7 +228,7 @@ Read our full [Evidence Policy](docs/evidence-policy.md) and [Boundaries & Limit
 
 ## Running the Automated Test Suite
 
-CloudFirst Aid is backed by 32 unit tests verifying catalog integrity, CLI commands, diagnostic rules, report formatting, and secret redaction.
+CloudFirst Aid is backed by 46 unit tests verifying catalog integrity, CLI commands, diagnostic rules, report formatting, and secret redaction.
 
 ```bash
 # Run test suite:

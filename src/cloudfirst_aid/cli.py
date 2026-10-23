@@ -18,7 +18,11 @@ from cloudfirst_aid.catalog import (
     load_catalog,
     validate_catalog,
 )
-from cloudfirst_aid.evidence import load_evidence_fixtures
+from cloudfirst_aid.evidence import (
+    format_evidence_record,
+    load_evidence_fixtures,
+    redact_sensitive_fields,
+)
 from cloudfirst_aid.reports import generate_incident_report, write_incident_report
 from cloudfirst_aid.triage import triage_scenario
 
@@ -169,11 +173,12 @@ def cmd_triage(args: argparse.Namespace) -> int:
     print("\n--- Diagnostic Findings ---")
     for idx, f in enumerate(findings, 1):
         status_label = f"[{f.status.upper()}]"
-        print(f"\nFinding {idx}: {status_label} {f.description}")
+        print(f"\nFinding {idx}: {status_label} {redact_sensitive_fields(f.description)}")
         if f.evidence_ids:
-            print(f"  Supported by: {', '.join(f.evidence_ids)}")
+            sanitized_eids = [redact_sensitive_fields(eid) for eid in f.evidence_ids]
+            print(f"  Supported by: {', '.join(sanitized_eids)}")
         if f.explanation:
-            print(f"  Reasoning:    {f.explanation}")
+            print(f"  Reasoning:    {redact_sensitive_fields(f.explanation)}")
 
     print("\nRun 'cloudfirst-aid report " + scenario.id + "' to generate a complete markdown incident report.")
     return 0
@@ -211,16 +216,17 @@ def cmd_inspect_ec2(args: argparse.Namespace) -> int:
     """Optional read-only live inspection of an EC2 instance."""
     from cloudfirst_aid.aws_readonly import inspect_ec2_instance_readonly
 
-    print(f"Initiating read-only AWS inspection for instance '{args.instance_id}'...")
+    target_instance = redact_sensitive_fields(args.instance_id)
+    print(f"Initiating read-only AWS inspection for instance '{target_instance}'...")
     try:
         items = inspect_ec2_instance_readonly(args.instance_id, region_name=args.region)
         print(f"Successfully collected {len(items)} read-only evidence item(s):")
         for item in items:
-            print(f"\n[{item.id}] Source: {item.source}")
-            print(item.observation)
+            print("\n" + format_evidence_record(item))
         return 0
     except Exception as exc:
-        print(f"AWS Inspection failed: {exc}", file=sys.stderr)
+        sanitized_err = redact_sensitive_fields(str(exc))
+        print(f"AWS Inspection failed: {sanitized_err}", file=sys.stderr)
         return 1
 
 

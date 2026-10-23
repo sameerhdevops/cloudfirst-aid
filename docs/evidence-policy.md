@@ -43,6 +43,12 @@ Before any evidence string is stored in a report or displayed in CLI output, it 
 4. **Private Key Blocks:** Redacts entire PEM, RSA, and OpenSSH private key blocks (`-----BEGIN ... PRIVATE KEY-----` to `-----END ... PRIVATE KEY-----`).
 5. **Bearer & Authorization Tokens:** Masks HTTP bearer tokens and sensitive password assignment strings.
 
+### Scope & Inherent Limitations:
+Pattern-based regex redaction is a defense-in-depth safety measure applied at terminal-display and report-generation boundaries. It cannot guarantee detection of every possible arbitrary secret format, custom token structure, or obfuscated credential.
+- **Operator Responsibility:** Never input production credentials, customer secrets, or live private keys into evidence fixtures.
+- **Safe Fixtures:** Always use synthetic dummy identifiers (e.g., standard AWS documentation examples such as `AKIAIOSFODNN7EXAMPLE`) when constructing test evidence.
+- Redaction acts as an automated safety net to mitigate accidental disclosure, not as an absolute guarantee of total data sanitization.
+
 ---
 
 ## 3. Storage and Repository Safety
