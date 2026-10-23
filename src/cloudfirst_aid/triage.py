@@ -701,6 +701,11 @@ def _parse_security_group_snapshot(
     if payload is None:
         return False, set(), []
 
+    # A paginated AWS response is only a partial snapshot until every page is collected.
+    # Never infer that a rule is absent while NextToken indicates more results exist.
+    if isinstance(payload, dict) and payload.get("NextToken"):
+        return False, set(), []
+
     groups: set[str] = set()
     rules: list[dict[str, Any]] = []
 
