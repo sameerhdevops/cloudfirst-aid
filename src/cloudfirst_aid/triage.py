@@ -1064,11 +1064,30 @@ def _triage_s3_access_denied(evidence: list[EvidenceItem]) -> list[Finding]:
                             for key, value in operands.items():
                                 if key.lower() == "aws:securetransport" and str(value).lower() == "false":
                                     secure_transport_false = True
-                denial_description = (
-                    f"Bucket policy statement '{sid}' explicitly denies the observed S3 request (unencrypted HTTP; explicit Deny applies)."
-                    if secure_transport_false
-                    else f"Bucket policy statement '{sid}' explicitly denies the observed S3 request (explicit Deny applies)."
-                )
+                vpce_expected = None
+                if isinstance(condition, dict):
+                    for operator, operands in condition.items():
+                        if isinstance(operands, dict):
+                            for key, value in operands.items():
+                                if key.lower() == "aws:sourcevpce":
+                                    values = _policy_values(value)
+                                    if values:
+                                        vpce_expected = values[0]
+                if secure_transport_false:
+                    denial_description = (
+                        f"Bucket policy statement '{sid}' explicitly denies the observed S3 request "
+                        "(unencrypted HTTP; explicit Deny applies)."
+                    )
+                elif vpce_expected:
+                    denial_description = (
+                        f"Bucket policy statement '{sid}' explicitly denies the observed S3 request "
+                        f"(explicit Deny condition for VPC endpoint '{vpce_expected}')."
+                    )
+                else:
+                    denial_description = (
+                        f"Bucket policy statement '{sid}' explicitly denies the observed S3 request "
+                        "(explicit Deny applies)."
+                    )
                 findings.append(Finding(
                     description=denial_description,
                     status=FindingStatus.CONFIRMED.value,
