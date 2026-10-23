@@ -1065,9 +1065,9 @@ def _triage_s3_access_denied(evidence: list[EvidenceItem]) -> list[Finding]:
                                 if key.lower() == "aws:securetransport" and str(value).lower() == "false":
                                     secure_transport_false = True
                 denial_description = (
-                    f"Bucket policy statement '{sid}' explicitly denies the observed S3 request (unencrypted HTTP)."
+                    f"Bucket policy statement '{sid}' explicitly denies the observed S3 request (unencrypted HTTP; explicit Deny applies)."
                     if secure_transport_false
-                    else f"Bucket policy statement '{sid}' explicitly denies the observed S3 request."
+                    else f"Bucket policy statement '{sid}' explicitly denies the observed S3 request (explicit Deny applies)."
                 )
                 findings.append(Finding(
                     description=denial_description,
