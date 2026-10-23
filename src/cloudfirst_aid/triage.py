@@ -1066,7 +1066,7 @@ def _triage_s3_access_denied(evidence: list[EvidenceItem]) -> list[Finding]:
                                     secure_transport_false = True
                 vpce_expected = None
                 if isinstance(condition, dict):
-                    for operator, operands in condition.items():
+                    for _operator, operands in condition.items():
                         if isinstance(operands, dict):
                             for key, value in operands.items():
                                 if key.lower() == "aws:sourcevpce":
