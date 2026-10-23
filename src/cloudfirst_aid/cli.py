@@ -180,7 +180,7 @@ def cmd_triage(args: argparse.Namespace) -> int:
 
 
 def cmd_report(args: argparse.Namespace) -> int:
-    """Generate an audit-ready Markdown incident report."""
+    """Generate a structured Markdown incident report."""
     try:
         scenarios = load_catalog()
     except Exception as exc:

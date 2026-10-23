@@ -14,10 +14,10 @@ Security is a primary design consideration for CloudFirst Aid. Because this tool
 
 If you discover a security vulnerability—such as an unhandled credential leak, insecure command recommendation in a runbook, or path traversal risk—please report it responsibly:
 
-- **Contact:** Open a private security advisory on GitHub or email the maintainer directly at `softwaresameer21226@gmail.com`.
+- **Reporting Channel:** Please submit a private security advisory through GitHub via [GitHub Security Advisories](https://github.com/sameerhdevops/cloudfirst-aid/security/advisories/new).
 - **Do not open public GitHub issues** containing unpatched vulnerabilities or active exploit details.
 
-We commit to acknowledging your report within 48 hours and providing a remediation timeline.
+Reports will be reviewed and addressed as maintainer availability permits. Safe local verification steps and proposed patches are welcomed.
 
 ---
 

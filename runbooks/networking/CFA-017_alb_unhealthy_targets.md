@@ -48,7 +48,7 @@ Or in another incident:
 
 ## 4. Investigation Sequence
 
-### Step 1: Query Target Health and Specific Reason Codes
+### Step 1: Query Target Health and Specific Reason Codes (Read-only Diagnostic)
 - **Command:**
   ```bash
   aws elbv2 describe-target-health \
@@ -59,7 +59,7 @@ Or in another incident:
   - If `Reason: Target.ResponseCodeMismatch` -> Proceed to Step 3 (Application Endpoint).
   - If `Reason: Target.FailedConnection` -> Proceed to Step 4 (Instance Port Listening).
 
-### Step 2: Diagnose `Target.Timeout` (Security Group Ingress)
+### Step 2: Diagnose `Target.Timeout` (Read-only Diagnostic - Security Group Ingress)
 - **Why it matters:** The target EC2 instances MUST permit incoming traffic from the ALB's Security Group on the target port (e.g., 8080).
 - **Check ALB Security Group:**
   ```bash
@@ -78,7 +78,7 @@ Or in another incident:
   - Does an inbound rule exist on port 8080 with `UserIdGroupPairs.GroupId: sg-alb123456`?
   - If missing, the target drops health check packets, resulting in `Target.Timeout`.
 
-### Step 3: Diagnose `Target.ResponseCodeMismatch`
+### Step 3: Diagnose `Target.ResponseCodeMismatch` (Read-only Diagnostic)
 - **Why it matters:** The Target Group configuration expects specific HTTP status codes (default `200`).
 - **Check Configured Health Check Path:**
   ```bash
@@ -95,7 +95,7 @@ Or in another incident:
   - If it returns `HTTP/1.1 404 Not Found`: The health check path does not exist in the application router.
   - If it returns `HTTP/1.1 301 Moved Permanently`: The app redirects HTTP to HTTPS, but the health check probe doesn't follow redirects!
 
-### Step 4: Diagnose `Target.FailedConnection`
+### Step 4: Diagnose `Target.FailedConnection` (Read-only Diagnostic)
 - Log into the target instance:
   ```bash
   sudo ss -tlnp | grep ':8080'
@@ -104,7 +104,7 @@ Or in another incident:
 
 ## 5. Remediation
 
-### If Security Group Rule is Missing (Target.Timeout):
+### If Security Group Rule is Missing (Target.Timeout) (AWS Infrastructure Change):
 Authorize the ALB Security Group to access the target instance port:
 ```bash
 aws ec2 authorize-security-group-ingress \

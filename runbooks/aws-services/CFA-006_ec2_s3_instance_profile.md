@@ -35,7 +35,7 @@ $ aws sts get-caller-identity
 
 ## 4. Investigation Sequence
 
-### Step 1: Check If Instance Profile is Attached to the EC2 Instance
+### Step 1: Check If Instance Profile is Attached to the EC2 Instance (Read-only Diagnostic)
 - **Command:**
   ```bash
   aws ec2 describe-instances \
@@ -44,10 +44,10 @@ $ aws sts get-caller-identity
     --output json
   ```
 - **What to look for:**
-  - If output is `[[]]` or `null`: No IAM role is attached to the instance! -> Proceed to Remediation Step A.
+  - If output is `[[]]` or `null`: No IAM role is attached to the instance! -> Proceed to Remediation Action A.
   - If an `Arn` is listed: Note the instance profile name and proceed to Step 2.
 
-### Step 2: Query Instance Metadata Service (IMDSv2) Directly
+### Step 2: Query Instance Metadata Service (IMDSv2) Directly (Read-only Diagnostic)
 - **Why it matters:** Verify that the guest operating system can communicate with the AWS hypervisor metadata service (`169.254.169.254`) and retrieve temporary STS credentials.
 - **Commands (IMDSv2):**
   ```bash
@@ -61,7 +61,7 @@ $ aws sts get-caller-identity
   - If this returns HTTP 401 or hangs: Check local iptables firewall or IMDSv2 configuration (`HttpEndpoint=enabled`).
   - If it returns the role name (e.g. `AppS3AccessRole`): IMDS credential vending is working properly.
 
-### Step 3: Check Active Caller Identity vs Environment Overrides
+### Step 3: Check Active Caller Identity vs Environment Overrides (Read-only Diagnostic)
 - **Command:**
   ```bash
   env | grep AWS
@@ -71,15 +71,15 @@ $ aws sts get-caller-identity
   - Does `env` contain hardcoded `AWS_ACCESS_KEY_ID`?
   - Does `aws sts get-caller-identity` show `assumed-role/AppS3AccessRole/i-0123456789abcdef0`?
 
-### Step 4: Audit the IAM Role Policy Syntax for S3 Actions
+### Step 4: Audit IAM Role Policy and KMS Permissions (Read-only Diagnostic)
 - **Why it matters:** S3 permissions require different resource ARNs for bucket-level actions versus object-level actions:
   - `s3:ListBucket` requires the **bucket ARN**: `arn:aws:s3:::my-company-app-assets`
   - `s3:GetObject`, `s3:PutObject` require the **wildcard object ARN**: `arn:aws:s3:::my-company-app-assets/*`
-  - *Common Bug:* An IAM policy that grants `s3:*` on `arn:aws:s3:::my-bucket/*` will FAIL when calling `aws s3 ls s3://my-bucket` because `s3:ListBucket` is evaluated against the bucket ARN, not the object wildcard!
+- **KMS Decrypt vs GenerateDataKey Distinction:** If the S3 bucket is encrypted using SSE-KMS with an AWS KMS Customer Managed Key (CMK), downloading or reading objects requires `kms:Decrypt` on the KMS key ARN. `kms:GenerateDataKey` is used when writing/uploading encrypted objects. Granting `kms:GenerateDataKey` without `kms:Decrypt` will allow uploads to succeed while all downloads fail with `AccessDenied`.
 
 ## 5. Remediation
 
-### Action A: Create and Attach IAM Instance Profile
+### Action A: Create and Attach IAM Instance Profile (AWS Infrastructure Change)
 If no role was attached:
 ```bash
 # 1. Create instance profile
@@ -96,8 +96,8 @@ aws ec2 associate-iam-instance-profile \
   --iam-instance-profile Name=EC2-S3-AppProfile
 ```
 
-### Action B: Fix IAM Policy Resource ARNs
-Attach a policy covering both bucket and object actions:
+### Action B: Fix IAM Policy Resource ARNs and KMS Actions (AWS Infrastructure Change)
+Attach a policy covering both bucket and object actions, including KMS decryption if KMS encryption is active:
 ```json
 {
   "Version": "2012-10-17",
@@ -117,12 +117,21 @@ Attach a policy covering both bucket and object actions:
         "s3:DeleteObject"
       ],
       "Resource": "arn:aws:s3:::my-company-app-assets/*"
+    },
+    {
+      "Sid": "AllowKmsDecryptionForS3Reads",
+      "Effect": "Allow",
+      "Action": [
+        "kms:Decrypt",
+        "kms:DescribeKey"
+      ],
+      "Resource": "arn:aws:kms:us-east-1:123456789012:key/your-kms-key-uuid"
     }
   ]
 }
 ```
 
-### Action C: Clear Overriding Environment Variables
+### Action C: Clear Overriding Environment Variables (Local System Change)
 ```bash
 unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE
 ```

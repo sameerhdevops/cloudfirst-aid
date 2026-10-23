@@ -40,7 +40,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-cloudfirst_aid = ["py.typed"]
+cloudfirst_aid = ["py.typed", "data/**/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,53 @@
+{
+  "id": "CFA-021",
+  "title": "AWS CLI Using Wrong Account, Profile, or Region",
+  "category": "iam-s3",
+  "difficulty": "beginner",
+  "severity": "medium",
+  "symptom": "AWS CLI commands execute against the wrong AWS account or region, creating resources in unintended locations.",
+  "initial_observations": [
+    "Command executed without error, but resources do not appear in expected console.",
+    "Resource not found errors when querying existing resources."
+  ],
+  "environment": "Developer or engineer workstation with multiple AWS profiles.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "aws-cli",
+    "credentials",
+    "profiles",
+    "iam",
+    "configuration"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Environment variable (AWS_PROFILE or AWS_DEFAULT_REGION) overriding credentials file",
+      "likelihood": "common",
+      "evidence_needed": "aws configure list shows TYPE: env overriding config file.",
+      "remediation": "Clear environment variables (`unset AWS_PROFILE AWS_DEFAULT_REGION`) or set intentionally."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Check Active Configuration Precedence",
+      "command": "aws configure list",
+      "explanation": "Display which configuration source is determining profile, region, and credentials.",
+      "what_to_look_for": "Look at TYPE column (env, shared-credentials-file, config-file)."
+    },
+    {
+      "order": 2,
+      "title": "Verify Authenticated IAM Caller Identity",
+      "command": "aws sts get-caller-identity",
+      "explanation": "Print Account ID, UserId, and Arn of current credentials.",
+      "what_to_look_for": "Account ID matching intended environment."
+    }
+  ],
+  "verification": "aws sts get-caller-identity displays correct 12-digit Account ID.",
+  "prevention": [
+    "Use prompt tools like `aws-vault` or `starship` to visibly display current AWS profile in shell prompt."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html"
+  ]
+}

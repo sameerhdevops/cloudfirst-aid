@@ -1,7 +1,7 @@
 """Incident report generator.
 
 Transforms scenario definitions, collected/simulated evidence items,
-and triage findings into a structured, audit-ready Markdown incident report.
+and triage findings into a structured Markdown post-mortem incident report.
 """
 
 from __future__ import annotations

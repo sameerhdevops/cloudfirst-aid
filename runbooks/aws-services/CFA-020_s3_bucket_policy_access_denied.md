@@ -35,7 +35,7 @@ Yet every access attempt is rejected.
 
 ## 4. Investigation Sequence
 
-### Step 1: Inspect the S3 Bucket Policy
+### Step 1: Inspect the S3 Bucket Policy (Read-only Diagnostic)
 - **Why it matters:** S3 Bucket Policies are resource-based policies attached directly to the bucket.
 - **Command:**
   ```bash
@@ -62,7 +62,7 @@ Yet every access attempt is rejected.
   ```
 - **Interpretation:** This policy explicitly denies ANY request that does not originate from VPC Endpoint `vpce-1a2b3c4d5e`. When accessed from home, public internet, or a different VPC, the request is unconditionally denied!
 
-### Step 2: Check for Unencrypted Traffic Enforcement (`aws:SecureTransport`)
+### Step 2: Check for Unencrypted Traffic Enforcement (`aws:SecureTransport`) (Read-only Diagnostic)
 - **What to look for:**
   ```json
   {
@@ -80,7 +80,7 @@ Yet every access attempt is rejected.
   ```
 - **Interpretation:** If an SDK or script sends plain HTTP requests (e.g. `endpoint_url="http://s3.amazonaws.com"`), S3 rejects the call.
 
-### Step 3: Check S3 Block Public Access Settings
+### Step 3: Check S3 Block Public Access Settings (Read-only Diagnostic)
 - **Command:**
   ```bash
   aws s3api get-public-access-block \
@@ -88,7 +88,7 @@ Yet every access attempt is rejected.
   ```
 - **What to look for:** If `BlockPublicPolicy` or `RestrictPublicBuckets` is `true`, bucket policies granting access to `"Principal": "*"` without strict conditions are blocked.
 
-### Step 4: Check for AWS Organizations Service Control Policies (SCPs)
+### Step 4: Check for AWS Organizations Service Control Policies (SCPs) (Read-only Diagnostic)
 - If the account belongs to AWS Organizations, an SCP at the Root or OU level may deny S3 actions in specific regions or on specific buckets.
 
 ## 5. Possible Causes & Likelihood
@@ -101,7 +101,7 @@ Yet every access attempt is rejected.
 
 ## 6. Remediation
 
-### If Explicit Deny Restricts Traffic to VPC Endpoint:
+### If Explicit Deny Restricts Traffic to VPC Endpoint (AWS Infrastructure Change):
 Option 1: Access the bucket from an EC2 instance or Lambda function inside the authorized VPC that routes through `vpce-1a2b3c4d5e`.
 Option 2: If administrator emergency access is required, update the bucket policy to exclude specific administrative IAM roles using `ArnNotEquals`:
 ```json

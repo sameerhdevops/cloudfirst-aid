@@ -1,0 +1,60 @@
+{
+  "id": "CFA-017",
+  "title": "Application Load Balancer Reports Unhealthy Targets",
+  "category": "networking",
+  "difficulty": "intermediate",
+  "severity": "critical",
+  "symptom": "ALB target group shows all registered targets with Status: 'Unhealthy' and reason 'Target.Timeout' or 'Target.ResponseCodeMismatch'.",
+  "initial_observations": [
+    "ALB returns HTTP 502 or 503 to web clients.",
+    "Targets are in running state in EC2 console."
+  ],
+  "environment": "AWS ALB routing to EC2 target group.",
+  "has_runbook": true,
+  "has_demo": true,
+  "tags": [
+    "alb",
+    "target-group",
+    "health-check",
+    "networking",
+    "security-groups"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Target Security Group blocks traffic coming from the ALB Security Group",
+      "likelihood": "common",
+      "evidence_needed": "Health check reason is Target.Timeout; EC2 SG has no inbound rule for ALB SG.",
+      "remediation": "Add an inbound rule to target SG permitting traffic on target port with source set to ALB Security Group ID."
+    },
+    {
+      "cause": "Health check path returns HTTP status outside the configured matcher (e.g. 404 or 301 vs expected 200)",
+      "likelihood": "common",
+      "evidence_needed": "Health check reason is Target.ResponseCodeMismatch [status: 404].",
+      "remediation": "Update Target Group health check path to a valid endpoint or update application routing."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Query Target Health and Specific Reason Codes",
+      "command": "aws elbv2 describe-target-health --target-group-arn arn:aws:elasticloadbalancing:... --output table",
+      "explanation": "Retrieve specific health check failure reason for each target.",
+      "what_to_look_for": "TargetHealth.Reason (e.g. Target.Timeout, Target.ResponseCodeMismatch)."
+    },
+    {
+      "order": 2,
+      "title": "Test Health Check Endpoint Directly from Within VPC",
+      "command": "curl -Iv http://<target-private-ip>:<health-port>/<health-path>",
+      "explanation": "Observe the exact HTTP response code and headers returned by the target.",
+      "what_to_look_for": "HTTP response code vs Target Group matcher setting."
+    }
+  ],
+  "verification": "Target health transitions to 'healthy' in `describe-target-health`.",
+  "prevention": [
+    "Dedicate a lightweight `/healthz` endpoint returning HTTP 200 that does not require database access or authentication.",
+    "Use Security Group reference rules instead of static CIDR ranges."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html"
+  ]
+}

@@ -20,7 +20,7 @@ Notice `signal=KILL` (SIGKILL / Signal 9). When combined with exit code 137 (`12
 
 ## 4. Investigation Sequence
 
-### Step 1: Check Current Memory and Swap Utilization
+### Step 1: Check Current Memory and Swap Utilization (Read-only Diagnostic)
 - **Command:**
   ```bash
   free -h
@@ -29,20 +29,20 @@ Notice `signal=KILL` (SIGKILL / Signal 9). When combined with exit code 137 (`12
   - Check the `available` column (not just `free`). In Linux, `free` memory is small because the kernel uses idle RAM for disk page caching. `available` indicates memory that can be given to applications without swapping.
   - If `Swap` total is `0B`, the system has no buffer against memory spikes.
 
-### Step 2: Confirm OOM Killer Invocation in Kernel Ring Buffer
+### Step 2: Confirm OOM Killer Invocation in Kernel Ring Buffer (Read-only Diagnostic)
 - **Command:**
   ```bash
   sudo dmesg -T | grep -iE "oom|out of memory|killed process" | tail -20
   ```
 - **What to look for in output:**
   ```text
-  [Wed Oct 23 03:45:09 2026] node invoked oom-killer: gfp_mask=0x1100cca(GFP_HIGHUSER_MOVABLE), order=0, oom_score_adj=0
+  [Fri Oct 23 03:45:09 2026] node invoked oom-killer: gfp_mask=0x1100cca(GFP_HIGHUSER_MOVABLE), order=0, oom_score_adj=0
   ...
-  [Wed Oct 23 03:45:10 2026] Out of memory: Killed process 18423 (node) total-vm:4210452kB, anon-rss:1924100kB, file-rss:0kB, shmem-rss:0kB, UID:1000 pgtables:8204kB oom_score_adj:0
+  [Fri Oct 23 03:45:10 2026] Out of memory: Killed process 18423 (node) total-vm:4210452kB, anon-rss:1924100kB, file-rss:0kB, shmem-rss:0kB, UID:1000 pgtables:8204kB oom_score_adj:0
   ```
 - **Distinguishing detail:** The kernel logs the exact process name, PID, and RSS (resident set size) at the time of termination.
 
-### Step 3: Identify High CPU and Memory Consumers
+### Step 3: Identify High CPU and Memory Consumers (Read-only Diagnostic)
 - **Command:**
   ```bash
   # Top 10 memory-consuming processes:
@@ -63,7 +63,7 @@ Notice `signal=KILL` (SIGKILL / Signal 9). When combined with exit code 137 (`12
 
 ## 6. Remediation
 
-### Immediate Action A: Restart Service and Monitor Memory Growth
+### Action A: Restart Service and Monitor Memory Growth (Local System Change)
 ```bash
 sudo systemctl restart backend-api.service
 ```
@@ -72,7 +72,7 @@ Watch process memory in real time:
 watch -n 2 'ps -eo pid,user,%cpu,%mem,rss,comm --sort=-rss | head -n 10'
 ```
 
-### Immediate Action B: Configure Emergency Swap File
+### Action B: Configure Emergency Swap File (Local System Change)
 For burst absorption while debugging the application:
 ```bash
 # Allocate 2GB swap file:
@@ -85,7 +85,7 @@ sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
-### Action C: Set Systemd Memory Limits (Prevent Server-Wide Hangs)
+### Action C: Set Systemd Memory Limits (Local System Change - Prevent Server-Wide Hangs)
 Contain memory leaks to the specific service so the kernel doesn't kill other daemons (like SSH or database):
 Edit `/etc/systemd/system/backend-api.service.d/override.conf`:
 ```ini

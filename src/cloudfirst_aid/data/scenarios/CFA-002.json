@@ -1,0 +1,72 @@
+{
+  "id": "CFA-002",
+  "title": "SSH Returns Permission Denied (publickey)",
+  "category": "ec2",
+  "difficulty": "beginner",
+  "severity": "high",
+  "symptom": "SSH connection reaches the EC2 instance but fails authentication with: 'ec2-user@203.0.113.10: Permission denied (publickey,gssapi-keyex,gssapi-with-mic)'.",
+  "initial_observations": [
+    "TCP connection succeeds immediately (no timeout).",
+    "SSH debug output shows client offering private key, but server rejects it."
+  ],
+  "environment": "EC2 Linux instance running Ubuntu or Amazon Linux.",
+  "has_runbook": true,
+  "has_demo": false,
+  "tags": [
+    "ssh",
+    "permissions",
+    "keys",
+    "ec2"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Wrong default AMI username used (e.g. using ec2-user on Ubuntu or ubuntu on Amazon Linux)",
+      "likelihood": "common",
+      "evidence_needed": "AMI platform check vs SSH connection username.",
+      "remediation": "Connect with the standard username for the AMI: ec2-user for AL2/AL2023, ubuntu for Ubuntu, admin for Debian, centos for CentOS."
+    },
+    {
+      "cause": "Local private key file permissions too open on client machine",
+      "likelihood": "common",
+      "evidence_needed": "Client SSH warning: 'UNPROTECTED PRIVATE KEY FILE! Permissions 0644 are too open'.",
+      "remediation": "Restrict private key permissions: chmod 400 key.pem (Linux/macOS) or icacls reset/grant on Windows."
+    },
+    {
+      "cause": "Wrong private key used (does not match public key in ~/.ssh/authorized_keys)",
+      "likelihood": "occasional",
+      "evidence_needed": "Fingerprint mismatch between local private key and KeyName assigned in EC2 launch config.",
+      "remediation": "Specify the matching private key corresponding to the KeyPairName displayed in EC2 console."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Run SSH in Verbose Mode (-v)",
+      "command": "ssh -v -i mykey.pem ec2-user@203.0.113.10",
+      "explanation": "Inspect the authentication handshake and identify which identity files are offered.",
+      "what_to_look_for": "Check 'Authentications that can continue' and reason for key rejection."
+    },
+    {
+      "order": 2,
+      "title": "Verify Instance AMI Platform and Assigned Key Pair Name",
+      "command": "aws ec2 describe-instances --instance-ids i-0123456789abcdef0 --query 'Reservations[*].Instances[*].[ImageId,KeyName]' --output table",
+      "explanation": "Confirm the official AMI OS type to deduce default username, and verify the KeyName.",
+      "what_to_look_for": "Check KeyName matches the private key file you are using."
+    },
+    {
+      "order": 3,
+      "title": "Check Local Private Key File Permissions",
+      "command": "ls -l mykey.pem",
+      "explanation": "OpenSSH clients refuse keys with permissions wider than 0400 or 0600.",
+      "what_to_look_for": "Ensure file is readable only by the owner."
+    }
+  ],
+  "verification": "Execute `ssh -i mykey.pem <correct-user>@<public-ip>` and confirm interactive shell prompt opens.",
+  "prevention": [
+    "Adopt AWS Systems Manager Session Manager to eliminate reliance on SSH key pair files.",
+    "Enforce standardized AMI naming and key management via AWS Secrets Manager."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/TroubleshootingInstancesConnecting.html"
+  ]
+}

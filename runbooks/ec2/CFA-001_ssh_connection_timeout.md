@@ -24,7 +24,7 @@ Establish these facts first:
 
 ## 4. Investigation Sequence
 
-### Step 1: Confirm Your Current Public IP
+### Step 1: Confirm Your Current Public IP (Read-only Diagnostic)
 - **Why it matters:** Security Groups enforce IP-based ingress filters.
 - **Command:**
   ```bash
@@ -32,7 +32,7 @@ Establish these facts first:
   ```
 - **Interpretation:** Note this IP address (e.g., `198.51.100.45`). Compare it with the Security Group ingress rules in Step 2.
 
-### Step 2: Inspect Inbound Security Group Rules for Port 22
+### Step 2: Inspect Inbound Security Group Rules for Port 22 (Read-only Diagnostic)
 - **Why it matters:** Security Groups are stateful firewalls evaluated at the AWS hypervisor before packets reach the instance operating system.
 - **Command:**
   ```bash
@@ -47,7 +47,7 @@ Establish these facts first:
   - If no rule exists, or the CIDR block does not cover your IP, traffic is dropped silently without an ICMP reject packet (causing a timeout).
 - **Next check:** If Security Group rule is correct, check Subnet Route Table (Step 3).
 
-### Step 3: Verify Subnet Route Table Has Route to Internet Gateway
+### Step 3: Verify Subnet Route Table Has Route to Internet Gateway (Read-only Diagnostic)
 - **Why it matters:** For an EC2 instance to be reachable from the public internet, its subnet must have a direct route to an Internet Gateway (`igw-xxxx`).
 - **Command:**
   ```bash
@@ -59,7 +59,7 @@ Establish these facts first:
 - **What to look for:** A route with `DestinationCidrBlock: 0.0.0.0/0` and `GatewayId: igw-xxxxxxxx`.
 - **Next check:** If route table points to a `nat-xxxx`, this instance is located in a private subnet and cannot receive inbound internet connections.
 
-### Step 4: Check Subnet Network Access Control Lists (NACLs)
+### Step 4: Check Subnet Network Access Control Lists (NACLs) (Read-only Diagnostic)
 - **Why it matters:** Unlike Security Groups, NACLs are **stateless**. Both inbound and outbound rules must allow the traffic.
 - **Command:**
   ```bash
@@ -81,7 +81,7 @@ Establish these facts first:
 
 ## 6. Remediation
 
-### If Security Group Rule is Missing:
+### If Security Group Rule is Missing (AWS Infrastructure Change):
 Add an ingress rule authorizing TCP port 22 from your specific IP:
 ```bash
 aws ec2 authorize-security-group-ingress \
@@ -91,7 +91,7 @@ aws ec2 authorize-security-group-ingress \
   --cidr 198.51.100.45/32
 ```
 
-### If Subnet Missing Internet Gateway Route:
+### If Subnet Missing Internet Gateway Route (AWS Infrastructure Change):
 Add default route to the subnet's route table:
 ```bash
 aws ec2 create-route \

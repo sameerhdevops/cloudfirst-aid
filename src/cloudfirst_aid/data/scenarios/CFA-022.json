@@ -1,0 +1,53 @@
+{
+  "id": "CFA-022",
+  "title": "S3 KMS-Encrypted Object AccessDenied",
+  "category": "iam-s3",
+  "difficulty": "intermediate",
+  "severity": "high",
+  "symptom": "User has full S3 permissions but receives AccessDenied specifically when downloading encrypted S3 objects.",
+  "initial_observations": [
+    "s3:ListBucket succeeds.",
+    "s3:GetObject fails with AccessDenied on objects encrypted with customer-managed KMS key (SSE-KMS)."
+  ],
+  "environment": "S3 bucket with SSE-KMS encryption enabled.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "s3",
+    "kms",
+    "encryption",
+    "iam",
+    "key-policy"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Caller lacks kms:Decrypt permission on the AWS KMS key used to encrypt the S3 object",
+      "likelihood": "common",
+      "evidence_needed": "KMS Key Policy does not authorize the caller's IAM principal for kms:Decrypt.",
+      "remediation": "Update the KMS Key Policy to allow caller's principal `kms:Decrypt` and `kms:GenerateDataKey`."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Check Object Encryption Metadata",
+      "command": "aws s3api head-object --bucket my-bucket --key file.txt",
+      "explanation": "Identify the KMS key ARN (SSEKMSKeyId) used to encrypt the object.",
+      "what_to_look_for": "SSEKMSKeyId in output."
+    },
+    {
+      "order": 2,
+      "title": "Inspect KMS Key Policy",
+      "command": "aws kms get-key-policy --key-id <key-arn> --policy-name default --output text | jq .",
+      "explanation": "Check if KMS key policy grants access to caller principal.",
+      "what_to_look_for": "Missing principal in KMS policy statement."
+    }
+  ],
+  "verification": "aws s3 cp s3://my-bucket/file.txt . downloads successfully.",
+  "prevention": [
+    "Include IAM roles in KMS key policy when configuring bucket default encryption with CMKs."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AmazonS3/latest/userguide/troubleshoot-access-denied.html"
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "id": "CFA-011",
+  "title": "Linux Inode Exhaustion (0 Inodes Available)",
+  "category": "linux",
+  "difficulty": "intermediate",
+  "severity": "critical",
+  "symptom": "Application encounters 'No space left on device', but `df -h` shows gigabytes of free disk capacity.",
+  "initial_observations": [
+    "df -h reports 40% disk space free.",
+    "touch /tmp/testfile fails with 'No space left on device'."
+  ],
+  "environment": "Linux server hosting web service with extensive temporary or session files.",
+  "has_runbook": true,
+  "has_demo": true,
+  "tags": [
+    "linux",
+    "inodes",
+    "storage",
+    "filesystem",
+    "find"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Millions of tiny session or temporary files accumulated in /tmp, /var/spool, or /var/lib/php/sessions",
+      "likelihood": "common",
+      "evidence_needed": "df -i shows IUse% at 100%; directory contains hundreds of thousands of entries.",
+      "remediation": "Clean accumulated orphan session files using find with -delete, and configure cron cleanup job."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Check Inode Consumption Across Filesystems",
+      "command": "df -i",
+      "explanation": "Measure inode usage percentage (IUse%) rather than block capacity.",
+      "what_to_look_for": "Filesystem showing 100% IUse% and 0 IFree."
+    },
+    {
+      "order": 2,
+      "title": "Locate Directories with the Highest File Counts",
+      "command": "sudo find / -xdev -printf '%h\\n' | sort | uniq -c | sort -k1 -n | tail -15",
+      "explanation": "Count file entries per directory across the filesystem.",
+      "what_to_look_for": "Directories containing hundreds of thousands of files."
+    }
+  ],
+  "verification": "Run `df -i /` and confirm IFree > 0 and IUse% < 80%.",
+  "prevention": [
+    "Set up automated tmpfiles.d or cron cleanup policies for session caches.",
+    "Monitor inode usage alongside disk block usage in CloudWatch."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/troubleshooting.html"
+  ]
+}

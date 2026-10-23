@@ -1,0 +1,47 @@
+{
+  "id": "CFA-016",
+  "title": "EBS Volume Expanded but Linux Filesystem Not Resized",
+  "category": "linux",
+  "difficulty": "intermediate",
+  "severity": "medium",
+  "symptom": "AWS console shows EBS volume size increased from 20GB to 50GB, but `df -h` still displays 20GB available.",
+  "initial_observations": [
+    "lsblk shows disk is 50G, but partition or filesystem is 20G.",
+    "df -h reflects the old size."
+  ],
+  "environment": "EC2 instance with modified EBS volume (ext4 or xfs).",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "ebs",
+    "storage",
+    "filesystem",
+    "growpart",
+    "resize2fs",
+    "xfs_growfs"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Partition and filesystem have not been grown to fill the new block device boundary",
+      "likelihood": "common",
+      "evidence_needed": "lsblk shows xvda is 50G but xvda1 is 20G.",
+      "remediation": "Run `sudo growpart /dev/xvda 1` to expand partition, followed by `sudo resize2fs /dev/xvda1` (ext4) or `sudo xfs_growfs -d /` (XFS)."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Compare Block Devices vs Filesystems",
+      "command": "lsblk && df -hT",
+      "explanation": "Inspect hardware block size vs partition table vs mounted filesystem.",
+      "what_to_look_for": "Discrepancy between root disk size and partition size."
+    }
+  ],
+  "verification": "df -h / shows updated 50GB size.",
+  "prevention": [
+    "Include filesystem resize commands in provisioning automation after EBS volume modification."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/recognize-expanded-volume-linux.html"
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "id": "CFA-026",
+  "title": "Public Subnet Instance Unreachable (Missing Public IP)",
+  "category": "networking",
+  "difficulty": "beginner",
+  "severity": "medium",
+  "symptom": "Instance launched in public subnet with IGW route cannot be reached from internet.",
+  "initial_observations": [
+    "Subnet has IGW route.",
+    "Instance has private IP (10.0.1.50) but no Public IPv4 address."
+  ],
+  "environment": "AWS VPC public subnet.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "vpc",
+    "public-ip",
+    "elastic-ip",
+    "ec2"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Auto-assign public IPv4 address was disabled on subnet and instance launch",
+      "likelihood": "common",
+      "evidence_needed": "describe-instances shows PublicIpAddress is null or missing.",
+      "remediation": "Allocate and associate an Elastic IP (EIP) to the instance's network interface."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Inspect Instance Public IP Assignment",
+      "command": "aws ec2 describe-instances --instance-ids i-xxxx --query 'Reservations[*].Instances[*].PublicIpAddress'",
+      "explanation": "Check if a public IP exists on the primary network interface.",
+      "what_to_look_for": "Null or empty result."
+    }
+  ],
+  "verification": "Public IP assigned and reachable via ping or SSH.",
+  "prevention": [
+    "Enable 'MapPublicIpOnLaunch' attribute on public subnets."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-ip-addressing.html"
+  ]
+}

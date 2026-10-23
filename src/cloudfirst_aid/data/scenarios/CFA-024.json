@@ -1,0 +1,59 @@
+{
+  "id": "CFA-024",
+  "title": "Application Cannot Connect to RDS Database",
+  "category": "monitoring",
+  "difficulty": "intermediate",
+  "severity": "critical",
+  "symptom": "Application crashes with 'OperationalError: (2003, \"Can't connect to MySQL server on 'rds-db.xxx.rds.amazonaws.com' (110)\")'.",
+  "initial_observations": [
+    "RDS instance status is 'Available'.",
+    "Connection hangs and eventually times out (code 110)."
+  ],
+  "environment": "EC2 application instance connecting to AWS RDS MySQL/PostgreSQL in same VPC.",
+  "has_runbook": true,
+  "has_demo": false,
+  "tags": [
+    "rds",
+    "mysql",
+    "database",
+    "security-groups",
+    "vpc"
+  ],
+  "possible_causes": [
+    {
+      "cause": "RDS DB Security Group does not allow inbound traffic from EC2 instance Security Group",
+      "likelihood": "common",
+      "evidence_needed": "RDS security group ingress rules do not contain EC2 SG ID or CIDR on port 3306/5432.",
+      "remediation": "Add ingress rule to RDS Security Group allowing port 3306 (or 5432) with source set to EC2 Security Group ID."
+    },
+    {
+      "cause": "RDS placed in different VPC or subnet without routing/peering",
+      "likelihood": "occasional",
+      "evidence_needed": "EC2 and RDS VPC IDs differ with no VPC peering connection active.",
+      "remediation": "Move RDS to same VPC or configure VPC Peering / Transit Gateway."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Test Network Socket Reachability",
+      "command": "nc -zv -w 5 rds-endpoint.xxx.rds.amazonaws.com 3306",
+      "explanation": "Verify TCP layer connectivity to database port without running database driver.",
+      "what_to_look_for": "Connected vs Connection timed out."
+    },
+    {
+      "order": 2,
+      "title": "Inspect RDS Security Group Ingress Rules",
+      "command": "aws rds describe-db-instances --db-instance-identifier my-db --query 'DBInstances[*].VpcSecurityGroups'",
+      "explanation": "Identify attached security groups and inspect their rules.",
+      "what_to_look_for": "Check security group ID and inbound rule for app port."
+    }
+  ],
+  "verification": "Run `nc -zv rds-endpoint.xxx.rds.amazonaws.com 3306` and confirm 'open' connection.",
+  "prevention": [
+    "Reference security groups by ID across application and database tiers rather than hardcoded IP addresses."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Troubleshooting.html"
+  ]
+}

@@ -31,14 +31,14 @@ The filesystem has **0 free inodes** (`IFree: 0`, `IUse%: 100%`).
 
 ## 4. Investigation Sequence
 
-### Step 1: Confirm Inode Usage by Filesystem
+### Step 1: Confirm Inode Usage by Filesystem (Read-only Diagnostic)
 - **Command:**
   ```bash
   df -i
   ```
 - **Interpretation:** Locate which partition has `IUse%: 100%` and `IFree: 0`.
 
-### Step 2: Locate Directories with the Highest File Counts
+### Step 2: Locate Directories with the Highest File Counts (Read-only Diagnostic)
 - **Why it matters:** Pinpoint which specific directory tree contains the excessive file population.
 - **Command:**
   ```bash
@@ -52,7 +52,7 @@ The filesystem has **0 free inodes** (`IFree: 0`, `IUse%: 100%`).
   ```
 - **Interpretation:** Directory `/var/spool/postfix/maildrop` contains 1.28 million files, consuming almost every available inode on the root volume.
 
-### Step 3: Inspect the Nature of the Accumulated Files
+### Step 3: Inspect the Nature of the Accumulated Files (Read-only Diagnostic)
 - **Why it matters:** Determine what generated the files before deleting them.
 - **Command:**
   ```bash
@@ -69,9 +69,16 @@ The filesystem has **0 free inodes** (`IFree: 0`, `IUse%: 100%`).
 
 ## 6. Remediation
 
-### Immediate Action: Clean the Offending Directory
+### Safety Rule: Always Preview Target Files Before Deletion
+**CAUTION:** `find ... -delete` is unprompted, immediate, and irreversible. Running it against the wrong path or pattern will permanently destroy data. Always run a non-destructive preview first to inspect candidate files:
+```bash
+# Preview candidates (Read-only Diagnostic):
+sudo find /var/spool/postfix/maildrop -type f -mtime +7 -print | head -n 20
+```
+
+### Action A: Clean the Offending Directory (Local System Change)
 Do NOT run `rm -rf /dir/*`—this fails with `-bash: /bin/rm: Argument list too long`.
-Instead, use `find` with `-delete`:
+Instead, use `find` with `-delete` after previewing:
 ```bash
 # Example: delete files older than 7 days in the affected directory:
 sudo find /var/spool/postfix/maildrop -type f -mtime +7 -delete
@@ -80,14 +87,14 @@ sudo find /var/spool/postfix/maildrop -type f -mtime +7 -delete
 sudo find /var/spool/postfix/maildrop -type f -delete
 ```
 
-### Fix Cron Job Mail Flood
+### Action B: Fix Cron Job Mail Flood (Local System Change)
 If cron jobs are dumping stdout to local maildrop:
 Add `MAILTO=""` at the top of crontabs, or redirect output in individual jobs:
 ```crontab
 * * * * * /usr/local/bin/myjob.sh > /dev/null 2>&1
 ```
 
-### Fix PHP Session Cleanup
+### Action C: Fix PHP Session Cleanup (Local System Change)
 Ensure PHP session garbage collector cron is active:
 ```bash
 sudo systemctl status php-session-cleanup.timer

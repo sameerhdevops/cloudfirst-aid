@@ -1,0 +1,60 @@
+{
+  "id": "CFA-020",
+  "title": "S3 AccessDenied 403 / Bucket Policy Explicit Deny",
+  "category": "iam-s3",
+  "difficulty": "intermediate",
+  "severity": "high",
+  "symptom": "IAM principal receives 'An error occurred (AccessDenied) when calling the GetObject operation' accessing S3 bucket.",
+  "initial_observations": [
+    "Principal has AdministratorAccess IAM policy attached.",
+    "Request is still denied by Amazon S3."
+  ],
+  "environment": "Amazon S3 bucket with Bucket Policy.",
+  "has_runbook": true,
+  "has_demo": true,
+  "tags": [
+    "s3",
+    "iam",
+    "bucket-policy",
+    "access-denied",
+    "explicit-deny"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Explicit Deny statement in the S3 Bucket Policy overrides IAM Allow",
+      "likelihood": "common",
+      "evidence_needed": "Bucket policy contains Statement with Effect: Deny matching principal or missing Condition exception.",
+      "remediation": "Audit bucket policy conditions (e.g. aws:PrincipalArn, aws:sourceVpce, aws:SecureTransport) and update."
+    },
+    {
+      "cause": "S3 Block Public Access enabled at account or bucket level blocking access",
+      "likelihood": "common",
+      "evidence_needed": "GetPublicAccessBlock returns BlockPublicPolicy: true.",
+      "remediation": "Review and configure Block Public Access settings if public/cross-account access was intended."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Retrieve and Inspect S3 Bucket Policy",
+      "command": "aws s3api get-bucket-policy --bucket my-bucket --query Policy --output text | jq .",
+      "explanation": "Look for explicit Deny statements that override identity permissions.",
+      "what_to_look_for": "Effect: Deny blocks and condition logic."
+    },
+    {
+      "order": 2,
+      "title": "Check Bucket and Account Public Access Block",
+      "command": "aws s3api get-public-access-block --bucket my-bucket",
+      "explanation": "Verify if BlockPublicAccess settings reject the request.",
+      "what_to_look_for": "True values on BlockPublicPolicy or RestrictPublicBuckets."
+    }
+  ],
+  "verification": "Run `aws s3 cp s3://my-bucket/test.txt .` and confirm download succeeds.",
+  "prevention": [
+    "Use IAM Policy Simulator to test policy evaluations before deploying bucket policies.",
+    "Always include NotPrincipal or Condition exclusions when using broad Deny statements."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AmazonS3/latest/userguide/troubleshoot-access-denied.html"
+  ]
+}

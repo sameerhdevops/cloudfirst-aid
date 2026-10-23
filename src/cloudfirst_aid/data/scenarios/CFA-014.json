@@ -1,0 +1,53 @@
+{
+  "id": "CFA-014",
+  "title": "Linux File Permission Denied and POSIX ACL Mask Issue",
+  "category": "linux",
+  "difficulty": "intermediate",
+  "severity": "medium",
+  "symptom": "User or service receives 'Permission denied' trying to read or execute a file despite group membership.",
+  "initial_observations": [
+    "ls -la displays permissions ending in '+' symbol.",
+    "Standard chmod does not grant expected access."
+  ],
+  "environment": "Linux server using POSIX Access Control Lists (ACLs).",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "linux",
+    "permissions",
+    "acls",
+    "getfacl",
+    "setfacl"
+  ],
+  "possible_causes": [
+    {
+      "cause": "POSIX ACL mask restricts effective permissions or parent directory lacks execute (x) traversal bit",
+      "likelihood": "common",
+      "evidence_needed": "getfacl shows `mask::r--` or parent directory is `drw-r--r--`.",
+      "remediation": "Fix parent directory traversal bit (`chmod +x parent_dir`) and adjust ACL mask (`setfacl -m m::rwx file`)."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Inspect File and Parent Directory POSIX ACLs",
+      "command": "getfacl /path/to/target_file",
+      "explanation": "Retrieve extended ACL permissions and effective mask.",
+      "what_to_look_for": "Look for #effective: annotations and mask line."
+    },
+    {
+      "order": 2,
+      "title": "Check Parent Directory Traversal (Execute) Permission",
+      "command": "namei -l /path/to/target_file",
+      "explanation": "Step through every directory in the path to verify traversal permissions.",
+      "what_to_look_for": "Any parent directory missing execute (x) bit for the executing user."
+    }
+  ],
+  "verification": "Execute `sudo -u <target-user> cat /path/to/target_file` successfully.",
+  "prevention": [
+    "Standardize file ownership and use POSIX groups rather than ad-hoc user ACLs where possible."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/troubleshooting.html"
+  ]
+}

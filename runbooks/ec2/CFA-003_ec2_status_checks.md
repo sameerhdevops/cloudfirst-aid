@@ -41,9 +41,14 @@ Or in another incident:
 2. **Instance Status Check:** Monitors the software and network configuration of your individual instance (corrupted filesystem, kernel panic, `/etc/fstab` misconfiguration, exhausted memory/exhausted page table).
    - *Rule:* The issue is inside the guest OS. Stopping and starting may not fix it if boot configuration is corrupted.
 
+**CRITICAL WARNINGS on Stop/Start Actions:**
+- **Public IPv4 Address Release:** Unless the instance is associated with an Elastic IP (EIP), stopping an EC2 instance releases its dynamic public IPv4 address back to the AWS pool. A new public IP is assigned upon startup, which will disrupt any DNS records or external firewall whitelists pointing to the old IP.
+- **Ephemeral Storage Loss:** Instance store (ephemeral) volumes are physically wiped when an instance is stopped. Only EBS root and attached EBS volumes persist. Ensure no critical runtime data is stored exclusively on ephemeral mounts.
+- **Cost Considerations:** Compute charges pause while stopped, but EBS storage, snapshots, and unattached Elastic IPs continue to incur hourly charges.
+
 ## 4. Investigation Sequence
 
-### Step 1: Query Specific Status Check Status
+### Step 1: Query Specific Status Check Status (Read-only Diagnostic)
 - **Command:**
   ```bash
   aws ec2 describe-instance-status \
@@ -54,8 +59,9 @@ Or in another incident:
   - If `SystemStatus.Status == "impaired"`: AWS physical host issue -> Proceed to Step 2.
   - If `InstanceStatus.Status == "impaired"`: Guest OS issue -> Proceed to Step 3.
 
-### Step 2: System Status Check Remediation (Host Migration)
+### Step 2: System Status Check Remediation (AWS Infrastructure Change - Host Migration)
 - **Why it matters:** Stopping an EBS-backed instance deallocates it from the faulty underlying physical host. Starting it forces AWS EC2 to allocate and launch it on a different, healthy physical server in the same Availability Zone.
+- **Pre-check:** Verify if an Elastic IP is attached (`aws ec2 describe-instances --instance-ids i-0123456789abcdef0 --query "Reservations[*].Instances[*].PublicIpAddress"`). If using dynamic public IP, notify stakeholders of impending IP change.
 - **Commands:**
   ```bash
   # Step A: Stop the instance
@@ -67,9 +73,8 @@ Or in another incident:
   # Step C: Start the instance
   aws ec2 start-instances --instance-ids i-0123456789abcdef0
   ```
-- *Note:* Instance store volumes (ephemeral) are wiped upon instance stop. EBS volumes remain intact.
 
-### Step 3: Instance Status Check Diagnostic (Retrieve System Log)
+### Step 3: Instance Status Check Diagnostic (Read-only Diagnostic - Retrieve System Log)
 - **Why it matters:** The EC2 console output captures the Linux kernel boot log directly from the hypervisor serial console.
 - **Command:**
   ```bash

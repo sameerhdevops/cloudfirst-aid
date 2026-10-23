@@ -14,11 +14,11 @@ graph TD
     subgraph DataSources["Data Assets & Catalog"]
         CatalogLoader --> CatalogFiles["30 Structured Scenarios (scenarios/catalog/*.json)"]
         TriageEngine --> Fixtures["Evidence Fixtures (tests/fixtures/evidence_*.json)"]
-        TriageEngine -.-> LocalCollector["Safe Local Script (collect_linux_diagnostics.sh)"]
+        Operator["Engineer / Host Operator"] -.->|Runs manually on target host| LocalCollector["Standalone Diagnostic Utility (scripts/collect_linux_diagnostics.sh)"]
         AWSInspector -.->|Boto3 Read-Only Describe*| LiveAWS["AWS APIs (Live EC2/VPC Snapshot)"]
     end
 
     subgraph Outputs["Output Artifacts"]
-        ReportGen --> MarkdownReport["Audit-Ready Incident Report (reports/*.md)"]
+        ReportGen --> MarkdownReport["Structured Incident Report (reports/*.md)"]
         CatalogFiles -.-> Runbooks["14 Detailed Field Runbooks (runbooks/*/*.md)"]
     end

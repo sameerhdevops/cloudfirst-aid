@@ -28,7 +28,7 @@ The service is in `failed` state and exited immediately upon launch.
 
 ## 4. Investigation Sequence
 
-### Step 1: Inspect Detailed Journal Logs
+### Step 1: Inspect Detailed Journal Logs (Read-only Diagnostic)
 - **Command:**
   ```bash
   sudo journalctl -u api-gateway.service -b --no-pager -n 50
@@ -41,7 +41,7 @@ The service is in `failed` state and exited immediately upon launch.
   ```
 - **Interpretation:** The failure is caused by an **Address already in use** (port conflict on 8080).
 
-### Step 2: Identify Conflicting Process on the Port
+### Step 2: Identify Conflicting Process on the Port (Read-only Diagnostic)
 - **Command:**
   ```bash
   sudo ss -tlnp 'sport = :8080'
@@ -53,7 +53,7 @@ The service is in `failed` state and exited immediately upon launch.
   ```
 - **Interpretation:** PID 12044 (`old-gateway`) is already bound to port 8080.
 
-### Step 3: Inspect Service Unit File Syntax and Permissions
+### Step 3: Inspect Service Unit File Syntax and Permissions (Read-only Diagnostic)
 - **Command:**
   ```bash
   systemctl cat api-gateway.service
@@ -73,11 +73,17 @@ The service is in `failed` state and exited immediately upon launch.
 
 ## 6. Remediation
 
-### If Port Conflict (Old Process Running):
+### If Port Conflict: Terminate Conflicting Process (Local System Change)
 Terminate the rogue process:
 ```bash
 sudo kill -15 12044
 # Verify port is released:
+sudo ss -tlnp 'sport = :8080'
+```
+Then start the managed service:
+```bash
+sudo systemctl start api-gateway.service
+```
 sudo ss -tlnp 'sport = :8080'
 # Start the systemd service:
 sudo systemctl start api-gateway.service

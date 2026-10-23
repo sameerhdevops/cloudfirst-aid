@@ -1,0 +1,59 @@
+{
+  "id": "CFA-013",
+  "title": "systemd Service Fails to Start (CrashLoop)",
+  "category": "linux",
+  "difficulty": "intermediate",
+  "severity": "high",
+  "symptom": "`systemctl start myapp` fails with 'Job for myapp.service failed because the control process exited with error code'.",
+  "initial_observations": [
+    "Service status shows Active: failed (Result: exit-code).",
+    "Main PID exited with error code (status=1/FAILURE or status=127)."
+  ],
+  "environment": "Systemd managed Linux host.",
+  "has_runbook": true,
+  "has_demo": true,
+  "tags": [
+    "linux",
+    "systemd",
+    "journalctl",
+    "services"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Address already in use (another process already listening on the configured port)",
+      "likelihood": "common",
+      "evidence_needed": "journalctl shows 'bind: Address already in use' or 'EADDRINUSE'.",
+      "remediation": "Identify conflicting process using `ss -tlnp` and stop it or adjust configuration port."
+    },
+    {
+      "cause": "Missing executable or wrong path specified in ExecStart directive (exit status 127)",
+      "likelihood": "common",
+      "evidence_needed": "journalctl shows 'Failed at step EXEC spawning ...: No such file or directory'.",
+      "remediation": "Update ExecStart path in unit file to the absolute path of the verified binary, run daemon-reload."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Inspect Service Status and Exit Reason",
+      "command": "systemctl status myapp.service -l --no-pager",
+      "explanation": "Check unit state, PID, exit code, and recent log snippets.",
+      "what_to_look_for": "Status code and error line."
+    },
+    {
+      "order": 2,
+      "title": "Review Full Unit Journal Logs",
+      "command": "sudo journalctl -u myapp.service -b -e --no-pager -n 50",
+      "explanation": "View stdout/stderr emitted by the service process before death.",
+      "what_to_look_for": "Stack traces, missing config files, or port binding errors."
+    }
+  ],
+  "verification": "systemctl is-active myapp.service returns 'active'.",
+  "prevention": [
+    "Validate configuration files before restarting systemd services.",
+    "Use `systemctl daemon-reload` whenever unit files are edited."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/troubleshooting.html"
+  ]
+}

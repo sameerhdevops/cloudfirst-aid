@@ -35,7 +35,7 @@ elb_status_code=502 target_status_code=-
 
 ## 4. Investigation Sequence
 
-### Step 1: Check Reverse Proxy Error Logs
+### Step 1: Check Reverse Proxy Error Logs (Read-only Diagnostic)
 - **Command:**
   ```bash
   sudo tail -n 30 /var/log/nginx/error.log
@@ -45,7 +45,7 @@ elb_status_code=502 target_status_code=-
   - `connect() failed (110: Connection timed out)` -> Proceed to Step 3.
   - `upstream prematurely closed connection` -> Proceed to Step 4.
 
-### Step 2: Check If Backend Process is Alive (Connection Refused)
+### Step 2: Check If Backend Process is Alive (Read-only Diagnostic - Connection Refused)
 - **Command:**
   ```bash
   sudo systemctl status gunicorn.service  # or node / uwsgi / php-fpm
@@ -57,7 +57,7 @@ elb_status_code=502 target_status_code=-
     sudo journalctl -u gunicorn.service -n 50 --no-pager
     ```
 
-### Step 3: Check Sockets and Port Bindings
+### Step 3: Check Sockets and Port Bindings (Read-only Diagnostic)
 - **Command:**
   ```bash
   sudo ss -tlnp
@@ -66,7 +66,7 @@ elb_status_code=502 target_status_code=-
   - Is the upstream port (e.g. `8000` or `3000`) listed in the `Local Address:Port` column?
   - Does the listening IP match the Nginx `proxy_pass` directive? (e.g., if Nginx proxies to `127.0.0.1:8000`, backend must not be bound only to a specific internal IP like `10.0.1.50:8000`).
 
-### Step 4: Test Upstream Backend Directly via Local Loopback
+### Step 4: Test Upstream Backend Directly via Local Loopback (Read-only Diagnostic)
 - **Command:**
   ```bash
   curl -Iv http://127.0.0.1:8000/
@@ -86,20 +86,20 @@ elb_status_code=502 target_status_code=-
 
 ## 6. Remediation
 
-### If Application Process Crashed:
+### If Application Process Crashed (Local System Change):
 Restart the backend service and inspect crash log for root cause (e.g. unhandled syntax error, database connection failure):
 ```bash
 sudo systemctl restart gunicorn.service
 ```
 
-### If Unix Domain Socket Permission Error:
+### If Unix Domain Socket Permission Error (Local System Change):
 Ensure the Nginx worker user (`nginx` or `www-data`) has read/write permissions on the socket:
 ```bash
 sudo chown www-data:www-data /run/app.sock
 sudo chmod 660 /run/app.sock
 ```
 
-### If ALB Architecture:
+### If ALB Architecture (AWS Infrastructure Change):
 Ensure target instance Security Group authorizes traffic on the target port from the ALB Security Group:
 ```bash
 aws ec2 authorize-security-group-ingress \

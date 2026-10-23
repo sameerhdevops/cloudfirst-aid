@@ -30,16 +30,18 @@ Every evidence record processed by CloudFirst Aid belongs to one of three strict
 Before any evidence string is stored in a report or displayed in CLI output, it passes through the automated redaction engine (`src/cloudfirst_aid/evidence.py:redact_sensitive_fields`).
 
 ### Automated Redaction Patterns:
-1. **AWS Access Key IDs:** Replaces standard 20-character AWS access key identifiers starting with `AKIA` with masked placeholders:
+1. **AWS Access Key IDs:** Replaces standard 20-character AWS access key identifiers starting with `AKIA` (permanent) and `ASIA` (temporary STS sessions) with masked placeholders:
    ```
    AKIAIOSFODNN7EXAMPLE  -->  AKIA****************
+   ASIAIOSFODNN7EXAMPLE  -->  ASIA****************
    ```
-2. **AWS Secret Access Keys:** Replaces 40-character base64-encoded credential strings with `[REDACTED]`.
+2. **AWS Secret Access Keys:** Replaces 40-character base64-encoded credential strings with `[REDACTED]`, while preserving 40-character Git commit hexadecimal hashes.
 3. **AWS Account Numbers:** Masks 12-digit AWS account IDs:
    ```
    123456789012  -->  ************
    ```
-4. **Private Key Blocks:** Blocks storing RSA or OpenSSH private key files (`-----BEGIN OPENSSH PRIVATE KEY-----`).
+4. **Private Key Blocks:** Redacts entire PEM, RSA, and OpenSSH private key blocks (`-----BEGIN ... PRIVATE KEY-----` to `-----END ... PRIVATE KEY-----`).
+5. **Bearer & Authorization Tokens:** Masks HTTP bearer tokens and sensitive password assignment strings.
 
 ---
 

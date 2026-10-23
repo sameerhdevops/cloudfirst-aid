@@ -23,7 +23,7 @@ CloudFirst Aid is an offline-first troubleshooting laboratory and diagnostic eva
          |                              |                              |
          v                              v                              v
 [scenarios/catalog/*.json]     [tests/fixtures/*.json]        [examples/reports/*.md]
- 30 Structured Scenarios        Simulated Evidence             Audit-Ready Reports
+ 30 Structured Scenarios        Simulated Evidence             Incident Reports
 ```
 
 ### Component Responsibilities:
@@ -43,7 +43,7 @@ CloudFirst Aid is an offline-first troubleshooting laboratory and diagnostic eva
      - `confirmed`: Sufficient evidence establishes the exact failure cause (e.g. "Filesystem is at 100% capacity", "Security group does not allow port 22").
      - `needs_investigation`: Insufficient evidence to reach a conclusion.
 4. **Report Generator (`reports.py`):**
-   - Formats scenarios, evidence records, and triage findings into standardized, audit-ready Markdown incident reports suitable for post-mortems and technical reviews.
+   - Formats scenarios, evidence records, and triage findings into standardized Markdown incident reports suitable for post-mortems and technical reviews.
 5. **Optional Read-Only AWS Inspector (`aws_readonly.py`):**
    - Provides safe, opt-in inspection of live EC2 instance metadata and attached security groups via read-only APIs (`Describe*`).
    - Zero side-effects; never creates, alters, or destroys cloud resources.
@@ -56,7 +56,7 @@ CloudFirst Aid is an offline-first troubleshooting laboratory and diagnostic eva
 2. **Catalog Load:** `catalog.py` loads the corresponding scenario definition, providing the baseline symptom, initial observations, possible root causes, and ordered investigation steps.
 3. **Evidence Ingestion:** `evidence.py` loads diagnostic evidence fixtures (`tests/fixtures/evidence_CFA-001.json`), local diagnostic scripts, or optional live AWS metadata.
 4. **Triage Evaluation:** `triage.py` passes the evidence through deterministic rules, matching observed patterns to candidate root causes and assigning confidence status (`CONFIRMED`, `SUPPORTED`, `OBSERVED`).
-5. **Report Formulation:** `reports.py` merges the scenario definition, raw evidence items (sanitized), and derived findings into an audit report.
+5. **Report Formulation:** `reports.py` merges the scenario definition, raw evidence items (sanitized), and derived findings into a post-mortem incident report.
 
 ---
 

@@ -15,7 +15,7 @@ Furthermore, simulating failures by deliberately destroying or misconfiguring re
 CloudFirst Aid adopts an **offline-first, zero-cloud-dependency** architectural core:
 1. All 30 troubleshooting scenarios, runbooks, and diagnostic evaluation rules are stored locally in version-controlled JSON and Markdown assets.
 2. Incident triage is powered by deterministic rule evaluation operating on supplied diagnostic evidence fixtures (`tests/fixtures/evidence_*.json`) or safe, non-destructive local system snapshots.
-3. No AWS credentials, credit card, or active internet connection is required to run the CLI, validate the catalog, execute triage tests, or generate audit-ready incident reports.
+3. No AWS credentials, credit card, or active internet connection is required to run the CLI, validate the catalog, execute triage tests, or generate structured incident reports.
 
 ## Consequences
 

@@ -38,13 +38,14 @@ def format_evidence_record(item: EvidenceItem) -> str:
     """Format a single evidence item for display or report inclusion."""
     lines = [
         f"Evidence: {item.id}",
-        f"  Description: {item.description}",
+        f"  Description: {redact_sensitive_fields(item.description)}",
         f"  Source:      {item.source}",
         f"  Provenance:  {item.provenance}",
     ]
     if item.observation:
-        # Indent multi-line observations
-        obs_lines = item.observation.strip().split("\n")
+        # Indent multi-line observations after redaction
+        sanitized_obs = redact_sensitive_fields(item.observation.strip())
+        obs_lines = sanitized_obs.split("\n")
         lines.append("  Observation:")
         for ol in obs_lines:
             lines.append(f"    {ol}")
@@ -56,20 +57,52 @@ def format_evidence_record(item: EvidenceItem) -> str:
 
 
 def redact_sensitive_fields(text: str) -> str:
-    """Basic redaction of common sensitive patterns in evidence text.
+    """Redact common sensitive patterns in evidence text.
 
-    Replaces AWS access key IDs, secret keys, and account-ID-like
-    12-digit numbers. This is a safety net, not a substitute for
-    careful evidence design.
+    Replaces AWS access key IDs (standard and temporary), secret keys,
+    bearer tokens, private key blocks, passwords, and 12-digit account IDs.
+    Preserves legitimate 40-character Git commit hashes and file hashes.
     """
     import re
 
-    # AWS Access Key ID pattern (AKIA...)
-    text = re.sub(r"AKIA[0-9A-Z]{16}", "AKIA****************", text)
-    # Long base64-like secret keys (40 chars)
-    text = re.sub(r"(?<=['\"\s=])[A-Za-z0-9/+=]{40}(?=['\"\s,])", "[REDACTED]", text)
-    # 12-digit AWS account IDs
-    text = re.sub(r"\b\d{12}\b", "************", text)
+    # 1. Complete PEM private key blocks (RSA, EC, OPENSSH, DSA, or unadorned)
+    text = re.sub(
+        r"-----BEGIN (?:[A-Z0-9_-]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z0-9_-]+ )?PRIVATE KEY-----",
+        "[REDACTED PRIVATE KEY BLOCK]",
+        text,
+    )
+
+    # 2. AWS Access Key IDs (AKIA for permanent credentials, ASIA for temporary STS credentials)
+    text = re.sub(r"\bAKIA[0-9A-Z]{16}\b", "AKIA****************", text)
+    text = re.sub(r"\bASIA[0-9A-Z]{16}\b", "ASIA****************", text)
+
+    # 3. HTTP Authorization / Bearer tokens
+    text = re.sub(
+        r"(?i)\b(bearer\s+)[A-Za-z0-9._~+/-]{16,}\b",
+        r"\g<1>[REDACTED TOKEN]",
+        text,
+    )
+
+    # 4. Explicit password / secret assignment patterns
+    text = re.sub(
+        r"(?i)\b((?:password|passwd|pwd|secret_key|secret_access_key)\s*[:=]\s*['\"]?)(?:[^\s'\";]+)(['\"]?)",
+        r"\g<1>[REDACTED]\g<2>",
+        text,
+    )
+
+    # 5. Base64-like secret keys (40 chars), distinguishing them from 40-character Git commit hex hashes
+    def _redact_secret_key(match: re.Match[str]) -> str:
+        candidate = match.group(0)
+        # Preserve Git commit hashes (strictly 40 lowercase hexadecimal characters)
+        if re.fullmatch(r"[0-9a-f]{40}", candidate):
+            return candidate
+        return "[REDACTED]"
+
+    text = re.sub(r"(?<=['\"\s=:])([A-Za-z0-9/+=]{40})(?=['\"\s,;]|$)", _redact_secret_key, text)
+
+    # 6. 12-digit AWS account IDs (standalone digits)
+    text = re.sub(r"(?<=\b)\d{12}(?=\b)", "************", text)
+
     return text
 
 

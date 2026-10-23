@@ -7,6 +7,7 @@ fields and identifier uniqueness, and provides lookup by ID or category.
 from __future__ import annotations
 
 import json
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -20,14 +21,22 @@ def _find_catalog_dir() -> Path:
     """Locate the scenario catalog directory.
 
     Checks, in order:
-    1. The path relative to the installed package (for development).
-    2. The current working directory's scenarios/catalog/.
+    1. Packaged resource data (installed wheel/distribution).
+    2. The path relative to the source checkout (scenarios/catalog/).
+    3. The current working directory's scenarios/catalog/.
     """
-    if _DEFAULT_CATALOG_DIR.is_dir():
+    try:
+        pkg_data = Path(resources.files("cloudfirst_aid")) / "data" / "scenarios"
+        if pkg_data.is_dir() and any(pkg_data.glob("*.json")):
+            return pkg_data
+    except Exception:
+        pass
+
+    if _DEFAULT_CATALOG_DIR.is_dir() and any(_DEFAULT_CATALOG_DIR.glob("*.json")):
         return _DEFAULT_CATALOG_DIR
 
     cwd_catalog = Path.cwd() / "scenarios" / "catalog"
-    if cwd_catalog.is_dir():
+    if cwd_catalog.is_dir() and any(cwd_catalog.glob("*.json")):
         return cwd_catalog
 
     raise FileNotFoundError(

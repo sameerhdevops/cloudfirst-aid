@@ -1,0 +1,82 @@
+{
+  "id": "CFA-001",
+  "title": "EC2 SSH Connection Times Out",
+  "category": "ec2",
+  "difficulty": "beginner",
+  "severity": "high",
+  "symptom": "Engineer attempts to connect to an Amazon EC2 instance via SSH (`ssh -i key.pem ec2-user@203.0.113.10`) and receives: 'ssh: connect to host 203.0.113.10 port 22: Connection timed out'.",
+  "initial_observations": [
+    "SSH client hangs for approximately 30-60 seconds before printing 'Connection timed out'.",
+    "The instance shows 'running' state in the AWS Management Console.",
+    "No TCP handshake is completed."
+  ],
+  "environment": "Amazon Linux 2 / 2023 EC2 instance in a public subnet with an attached Elastic IP.",
+  "has_runbook": true,
+  "has_demo": true,
+  "tags": [
+    "ssh",
+    "ec2",
+    "security-groups",
+    "vpc",
+    "nacl"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Security Group does not permit inbound TCP port 22 from the engineer's public IP",
+      "likelihood": "common",
+      "evidence_needed": "ec2:DescribeSecurityGroups showing no rule for port 22 or CIDR mismatch.",
+      "remediation": "Add an inbound rule to the instance's Security Group authorizing TCP port 22 from your specific IP/32."
+    },
+    {
+      "cause": "Subnet Route Table missing route to Internet Gateway (0.0.0.0/0 -> igw-xxx)",
+      "likelihood": "common",
+      "evidence_needed": "ec2:DescribeRouteTables showing no default 0.0.0.0/0 route to an attached IGW.",
+      "remediation": "Attach an Internet Gateway to the VPC and add route 0.0.0.0/0 pointing to the IGW ID."
+    },
+    {
+      "cause": "Network ACL (NACL) blocking inbound port 22 or outbound ephemeral ports (1024-65535)",
+      "likelihood": "occasional",
+      "evidence_needed": "ec2:DescribeNetworkAcls showing a Deny rule before Allow or missing outbound return rule.",
+      "remediation": "Update subnet NACL to allow inbound port 22 and outbound ephemeral ports (1024-65535)."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Verify Instance State and Public IP Assignment",
+      "command": "aws ec2 describe-instances --instance-ids i-0123456789abcdef0 --query 'Reservations[*].Instances[*].[State.Name,PublicIpAddress,SecurityGroups]' --output table",
+      "explanation": "Confirm instance is running and has a public IPv4 address assigned.",
+      "what_to_look_for": "State 'running' and non-empty PublicIpAddress."
+    },
+    {
+      "order": 2,
+      "title": "Inspect Inbound Security Group Rules for Port 22",
+      "command": "aws ec2 describe-security-groups --group-ids sg-0123456789abcdef0 --query 'SecurityGroups[*].IpPermissions[?ToPort==`22`]' --output json",
+      "explanation": "Verify an ingress rule exists allowing TCP port 22 from your current public IP.",
+      "what_to_look_for": "Check IpRanges CIDR against your public IP (obtained via 'curl https://checkip.amazonaws.com')."
+    },
+    {
+      "order": 3,
+      "title": "Check Subnet Route Table for Internet Gateway Route",
+      "command": "aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=subnet-0123456789abcdef0 --query 'RouteTables[*].Routes' --output table",
+      "explanation": "A public subnet must have a 0.0.0.0/0 route target matching igw-xxxxxxxx.",
+      "what_to_look_for": "DestinationCidrBlock 0.0.0.0/0 with GatewayId starting with igw-."
+    },
+    {
+      "order": 4,
+      "title": "Inspect Subnet Network ACL Rules (Inbound and Outbound)",
+      "command": "aws ec2 describe-network-acls --filters Name=association.subnet-id,Values=subnet-0123456789abcdef0 --output json",
+      "explanation": "NACLs are stateless. Inbound must allow port 22, and outbound must allow ephemeral ports 1024-65535.",
+      "what_to_look_for": "Deny rule numbered lower than Allow rule."
+    }
+  ],
+  "verification": "Execute `ssh -v -i key.pem ec2-user@<public-ip>` and confirm the TCP handshake succeeds (OpenSSH banner exchange starts).",
+  "prevention": [
+    "Use AWS Systems Manager (SSM) Session Manager for shell access without exposing port 22 to the public internet.",
+    "Use EC2 Instance Connect with specific IP prefixes or client VPN."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/TroubleshootingInstancesConnecting.html",
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/troubleshooting.html"
+  ]
+}

@@ -20,7 +20,7 @@ It teaches and demonstrates how an engineer investigates an operational issue, c
 - **30 Verified Scenarios:** Structured incident catalog across 6 categories (EC2, Linux, VPC Networking, Application, IAM/S3, Monitoring).
 - **14 Field Runbooks:** Detailed troubleshooting guides covering diagnostic logic, command explanations, root-cause differentiation, remediation, verification, and interview questions.
 - **Deterministic Diagnostic Engine:** Evaluates structured evidence fixtures against diagnostic rules to derive findings (`OBSERVED`, `SUPPORTED`, `CONFIRMED`) without guesswork.
-- **Incident Report Generator:** Compiles scenarios, evidence items, and findings into audit-ready Markdown post-mortem reports.
+- **Incident Report Generator:** Compiles scenarios, evidence items, and findings into structured Markdown post-mortem incident reports.
 - **Automated Quality Gates:** Full unit test suite (32 tests passing), Ruff static linting, and multi-version Python CI (3.10 - 3.14).
 - **Zero Cloud Charges:** Works 100% offline without AWS credentials, credit cards, or cloud billing.
 
@@ -50,7 +50,7 @@ graph TD
     end
 
     subgraph Outputs["Output Artifacts"]
-        ReportGen --> MarkdownReport["Audit-Ready Incident Report (reports/*.md)"]
+        ReportGen --> MarkdownReport["Structured Incident Report (reports/*.md)"]
         CatalogFiles -.-> Runbooks["14 Detailed Field Runbooks (runbooks/*/*.md)"]
     end
 ```
@@ -160,7 +160,7 @@ Finding 3: [CONFIRMED] Security group does not allow inbound SSH on port 22.
                 Traffic is silently dropped by the AWS hypervisor.
 ```
 
-### Step 4: Generate an Audit-Ready Incident Report
+### Step 4: Generate a Structured Incident Report
 ```bash
 cloudfirst-aid report CFA-001 --output reports/incident_CFA-001.md
 ```
@@ -170,7 +170,7 @@ View generated report examples in [`examples/reports/`](examples/reports/).
 
 ## Scenario Catalog & Key Runbooks
 
-CloudFirst Aid organizes 30 scenarios across 6 core operational categories. The 14 priority scenarios feature full, production-grade runbooks:
+CloudFirst Aid organizes 30 scenarios across 6 core operational categories. The 14 priority scenarios feature full, detailed step-by-step runbooks:
 
 | Category | Priority Incidents & Runbooks | Key Skills Demonstrated |
 |---|---|---|

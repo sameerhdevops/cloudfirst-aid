@@ -1,0 +1,59 @@
+{
+  "id": "CFA-019",
+  "title": "VPC DNS Resolution Failure",
+  "category": "networking",
+  "difficulty": "intermediate",
+  "severity": "high",
+  "symptom": "Instances in VPC cannot resolve public domain names or private Route 53 zones; `nslookup` times out.",
+  "initial_observations": [
+    "Ping to public IP (8.8.8.8) succeeds, but domain lookups fail.",
+    "AmazonProvidedDNS fails to respond."
+  ],
+  "environment": "Custom VPC in AWS.",
+  "has_runbook": true,
+  "has_demo": false,
+  "tags": [
+    "vpc",
+    "dns",
+    "route53",
+    "networking",
+    "dhcp"
+  ],
+  "possible_causes": [
+    {
+      "cause": "VPC attribute `enableDnsSupport` is set to false",
+      "likelihood": "common",
+      "evidence_needed": "describe-vpc-attribute returns EnableDnsSupport.Value: false.",
+      "remediation": "Enable DNS support: `aws ec2 modify-vpc-attribute --vpc-id vpc-xxx --enable-dns-support '{\"Value\": true}'`."
+    },
+    {
+      "cause": "Custom DHCP option set points to unreachable external DNS servers",
+      "likelihood": "occasional",
+      "evidence_needed": "cat /etc/resolv.conf points to non-Amazon IP that drops traffic.",
+      "remediation": "Update DHCP option set to use AmazonProvidedDNS or valid corporate forwarder."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Check VPC DNS Attributes",
+      "command": "aws ec2 describe-vpc-attribute --vpc-id vpc-xxxx --attribute enableDnsSupport && aws ec2 describe-vpc-attribute --vpc-id vpc-xxxx --attribute enableDnsHostnames",
+      "explanation": "Verify both DNS support and DNS hostnames are enabled on the VPC.",
+      "what_to_look_for": "Value: false on enableDnsSupport."
+    },
+    {
+      "order": 2,
+      "title": "Check Guest OS /etc/resolv.conf Configuration",
+      "command": "cat /etc/resolv.conf",
+      "explanation": "Confirm nameserver points to the AmazonProvidedDNS (VPC base + 2 or 169.254.169.253).",
+      "what_to_look_for": "nameserver entry matching VPC CIDR base + 2."
+    }
+  ],
+  "verification": "Run `dig amazon.com` and confirm NOERROR status with valid Answer section.",
+  "prevention": [
+    "Ensure IaC templates (Terraform/CloudFormation) explicitly set `enable_dns_support = true`."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-dns.html"
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "id": "CFA-007",
+  "title": "Website Returns HTTP 403 Forbidden or 404 Not Found",
+  "category": "application",
+  "difficulty": "beginner",
+  "severity": "medium",
+  "symptom": "End users accessing a web application receive HTTP 403 Forbidden or HTTP 404 Not Found response.",
+  "initial_observations": [
+    "Web server is running and responding.",
+    "Specific routes or static assets fail."
+  ],
+  "environment": "EC2 running Nginx or Apache HTTP Server.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "http",
+    "nginx",
+    "apache",
+    "permissions",
+    "filesystem"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Web server worker user lacks read/execute permissions on document root files",
+      "likelihood": "common",
+      "evidence_needed": "Nginx error.log: 'directory index of /var/www/html is forbidden' or '13: Permission denied'.",
+      "remediation": "Fix ownership and permissions: `chown -R nginx:nginx /var/www/html` and `chmod -R 755 /var/www/html`."
+    },
+    {
+      "cause": "Missing index file (index.html or index.php) with directory autoindex disabled",
+      "likelihood": "common",
+      "evidence_needed": "Directory exists but contains no recognized index file.",
+      "remediation": "Create required index.html or configure directory listing if intentional."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Check Web Server Error Log",
+      "command": "sudo tail -n 25 /var/log/nginx/error.log",
+      "explanation": "Web server logs state exact reason for 403 or 404.",
+      "what_to_look_for": "Look for 'Permission denied' or 'No such file or directory'."
+    },
+    {
+      "order": 2,
+      "title": "Verify File Permissions on Document Root",
+      "command": "ls -ld /var/www /var/www/html && ls -la /var/www/html",
+      "explanation": "Verify read and execute bits on path leading to content.",
+      "what_to_look_for": "Owner matching web server user and +r +x permissions."
+    }
+  ],
+  "verification": "curl -I http://localhost returns HTTP 200 OK.",
+  "prevention": [
+    "Include correct file permission enforcement in CI/CD deployment scripts."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/hosting-websites.html"
+  ]
+}

@@ -33,7 +33,7 @@ From inside the EC2 application instance:
 
 ## 4. Investigation Sequence
 
-### Step 1: Verify RDS DB Instance Endpoint and Port
+### Step 1: Verify RDS DB Instance Endpoint and Port (Read-only Diagnostic)
 - **Command:**
   ```bash
   aws rds describe-db-instances \
@@ -46,7 +46,7 @@ From inside the EC2 application instance:
   - Confirm the exact port (`3306` for MySQL, `5432` for PostgreSQL).
   - Compare `VpcId` with the EC2 instance's `VpcId`.
 
-### Step 2: Test Low-Level TCP Port Reachability
+### Step 2: Test Low-Level TCP Port Reachability (Read-only Diagnostic)
 - **Why it matters:** Bypass application code and database drivers to test pure network connectivity.
 - **Command (from EC2 instance):**
   ```bash
@@ -56,7 +56,7 @@ From inside the EC2 application instance:
   ```
 - **Interpretation:** If timed out, the packet is blocked by Security Group, Route Table, or NACL.
 
-### Step 3: Inspect RDS Security Group Ingress Rules
+### Step 3: Inspect RDS Security Group Ingress Rules (Read-only Diagnostic)
 - **Why it matters:** The #1 root cause in cloud database connectivity is an RDS Security Group that does not authorize ingress from the EC2 instance's Security Group.
 - **Find RDS Security Group ID:**
   ```bash
@@ -77,7 +77,7 @@ From inside the EC2 application instance:
   - Does the rule permit traffic from the **EC2 instance's Security Group ID** (`sg-ec2app`)?
   - *Common Bug:* The rule only lists an outdated local IP or is completely empty!
 
-### Step 4: Verify Subnet Routing and NACLs
+### Step 4: Verify Subnet Routing and NACLs (Read-only Diagnostic)
 - If EC2 and RDS are in different VPCs, is VPC Peering or Transit Gateway configured with bidirectional routing?
 - Check Network ACLs on the database subnets to verify return ephemeral ports (`1024-65535`) are permitted.
 
@@ -91,7 +91,7 @@ From inside the EC2 application instance:
 
 ## 6. Remediation
 
-### Authorize EC2 Security Group in RDS Security Group
+### Authorize EC2 Security Group in RDS Security Group (AWS Infrastructure Change)
 Add an inbound rule to the RDS Security Group referencing the EC2 Security Group by ID:
 ```bash
 aws ec2 authorize-security-group-ingress \

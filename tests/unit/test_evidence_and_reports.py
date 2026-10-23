@@ -27,6 +27,44 @@ def test_redact_sensitive_fields() -> None:
     assert "************" in redacted
 
 
+def test_redact_temporary_credentials_and_bearer_tokens() -> None:
+    """Verify temporary STS keys (ASIA...) and Authorization Bearer headers are redacted."""
+    sample = (
+        "Session credentials: ASIAIOSFODNN7EXAMPLE with Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.test.token "
+        "and password = supersecretpass123"
+    )
+    redacted = redact_sensitive_fields(sample)
+    assert "ASIAIOSFODNN7EXAMPLE" not in redacted
+    assert "ASIA****************" in redacted
+    assert "eyJhbGciOiJIUzI1NiJ9.test.token" not in redacted
+    assert "supersecretpass123" not in redacted
+
+
+def test_redact_private_key_blocks() -> None:
+    """Verify complete PEM private key blocks are fully masked."""
+    sample = (
+        "Connecting with:\n"
+        "-----BEGIN RSA PRIVATE KEY-----\n"
+        "MIIEowIBAAKCAQEA0m4bE+fakekeydata\n"
+        "-----END RSA PRIVATE KEY-----\n"
+        "Connection closed."
+    )
+    redacted = redact_sensitive_fields(sample)
+    assert "MIIEowIBAAKCAQEA0m4bE+fakekeydata" not in redacted
+    assert "[REDACTED PRIVATE KEY BLOCK]" in redacted
+
+
+def test_preserve_git_commit_hashes() -> None:
+    """Verify legitimate 40-character Git commit hex hashes are preserved while secrets are redacted."""
+    commit_sha = "0315375498871633513b63200ea76ca3ea7e2c91"
+    secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    sample = f"Deployed commit {commit_sha} using key {secret_key}"
+    redacted = redact_sensitive_fields(sample)
+    assert commit_sha in redacted
+    assert secret_key not in redacted
+    assert "[REDACTED]" in redacted
+
+
 def test_format_evidence_record() -> None:
     """Verify evidence string formatting."""
     item = EvidenceItem(

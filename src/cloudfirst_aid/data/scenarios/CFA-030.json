@@ -1,0 +1,52 @@
+{
+  "id": "CFA-030",
+  "title": "CloudWatch Agent Missing Memory and Disk Metrics",
+  "category": "monitoring",
+  "difficulty": "intermediate",
+  "severity": "medium",
+  "symptom": "EC2 dashboard shows CPU and network metrics, but memory and disk utilization metrics are missing.",
+  "initial_observations": [
+    "CloudWatch default metrics exist.",
+    "Custom namespace CWAgent has no data points."
+  ],
+  "environment": "EC2 instance with CloudWatch agent installed.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "cloudwatch",
+    "cwagent",
+    "metrics",
+    "iam",
+    "monitoring"
+  ],
+  "possible_causes": [
+    {
+      "cause": "EC2 instance role lacks CloudWatchAgentServerPolicy IAM permissions",
+      "likelihood": "common",
+      "evidence_needed": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log shows AccessDenied writing metric data.",
+      "remediation": "Attach managed policy `CloudWatchAgentServerPolicy` to the instance's IAM role."
+    },
+    {
+      "cause": "CloudWatch agent service is stopped or failed due to JSON configuration syntax error",
+      "likelihood": "common",
+      "evidence_needed": "systemctl status amazon-cloudwatch-agent shows inactive or configuration parse error.",
+      "remediation": "Validate `/opt/aws/amazon-cloudwatch-agent/bin/config.json` and start agent service."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Check CloudWatch Agent Service Status and Logs",
+      "command": "sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -m ec2 -a status && sudo tail -n 25 /opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log",
+      "explanation": "Check if daemon is running and view recent error logs.",
+      "what_to_look_for": "status: running vs stopped; look for AccessDenied or config errors."
+    }
+  ],
+  "verification": "CloudWatch Metrics console displays active data points under 'CWAgent' namespace.",
+  "prevention": [
+    "Automate CloudWatch agent installation and configuration via AWS Systems Manager State Manager."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/troubleshooting-CloudWatch-Agent.html"
+  ]
+}

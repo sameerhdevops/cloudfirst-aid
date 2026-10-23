@@ -1,0 +1,60 @@
+{
+  "id": "CFA-008",
+  "title": "Website Returns HTTP 502 Bad Gateway",
+  "category": "application",
+  "difficulty": "intermediate",
+  "severity": "critical",
+  "symptom": "Browser displays '502 Bad Gateway' when accessing application via reverse proxy or ALB.",
+  "initial_observations": [
+    "Proxy server (Nginx or ALB) is reachable.",
+    "Backend upstream application service fails to return a valid HTTP response."
+  ],
+  "environment": "Nginx reverse proxy pointing to upstream Gunicorn/Node.js app.",
+  "has_runbook": true,
+  "has_demo": false,
+  "tags": [
+    "http-502",
+    "nginx",
+    "proxy",
+    "alb",
+    "gunicorn"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Upstream application process (Node, Gunicorn, PHP-FPM) crashed or not running",
+      "likelihood": "common",
+      "evidence_needed": "Nginx error log: 'connect() failed (111: Connection refused) while connecting to upstream'.",
+      "remediation": "Start or restart backend process with systemctl and inspect application crash trace."
+    },
+    {
+      "cause": "Upstream listening on wrong port or Unix domain socket permission issue",
+      "likelihood": "common",
+      "evidence_needed": "Socket file missing or owned by wrong user.",
+      "remediation": "Ensure backend listens on configured port/socket and socket file permissions allow proxy user access."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Check Reverse Proxy Error Log",
+      "command": "sudo tail -n 30 /var/log/nginx/error.log",
+      "explanation": "Identifies whether upstream refused connection, timed out, or sent empty response.",
+      "what_to_look_for": "Connection refused or no live upstreams while connecting to upstream."
+    },
+    {
+      "order": 2,
+      "title": "Check Status of Upstream Application Service",
+      "command": "sudo systemctl status myapp.service",
+      "explanation": "Confirm backend application daemon is active.",
+      "what_to_look_for": "Active: active (running) vs failed or dead."
+    }
+  ],
+  "verification": "curl -I http://localhost returns HTTP 200.",
+  "prevention": [
+    "Configure systemd `Restart=always` with `RestartSec=5`.",
+    "Implement robust health checks and monitoring."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-troubleshooting.html"
+  ]
+}

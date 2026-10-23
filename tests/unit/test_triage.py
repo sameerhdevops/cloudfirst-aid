@@ -88,3 +88,68 @@ def test_triage_unknown_scenario() -> None:
     findings = triage_scenario("CFA-999", [])
     assert len(findings) == 1
     assert findings[0].status == FindingStatus.NEEDS_INVESTIGATION.value
+
+
+def test_triage_empty_evidence() -> None:
+    """Verify all scenarios handle empty evidence by returning NEEDS_INVESTIGATION."""
+    scenarios = ["CFA-001", "CFA-010", "CFA-011", "CFA-013", "CFA-017", "CFA-020"]
+    for sid in scenarios:
+        findings = triage_scenario(sid, [])
+        assert len(findings) >= 1
+        assert any(f.status == FindingStatus.NEEDS_INVESTIGATION.value for f in findings)
+
+
+def test_triage_disk_full_no_false_positive_on_unrelated_percentage() -> None:
+    """Verify unrelated percentages like 89% or non-table 95% confidence don't trigger 100% full."""
+    from cloudfirst_aid.models import EvidenceItem
+
+    fake_evidence = [
+        EvidenceItem(
+            id="E1",
+            scenario_id="CFA-010",
+            description="Confidence score",
+            source="custom-tool",
+            observation="Model evaluated with 95% confidence. Filesystem /dev/xvda1 has 85% usage.",
+            provenance="simulated",
+        )
+    ]
+    findings = triage_scenario("CFA-010", fake_evidence)
+    # Must NOT claim 100% capacity
+    assert not any("100%" in f.description for f in findings)
+    assert not any(f.status == FindingStatus.CONFIRMED.value for f in findings)
+
+
+def test_triage_service_failure_ignores_generic_bind_word() -> None:
+    """Verify that generic mentions of 'bind' without EADDRINUSE don't trigger port conflict."""
+    from cloudfirst_aid.models import EvidenceItem
+
+    fake_evidence = [
+        EvidenceItem(
+            id="E1",
+            scenario_id="CFA-013",
+            description="DNS server info",
+            source="journalctl",
+            observation="Started BIND DNS server daemon successfully on standard interfaces.",
+            provenance="simulated",
+        )
+    ]
+    findings = triage_scenario("CFA-013", fake_evidence)
+    assert not any("already in use" in f.description.lower() for f in findings)
+
+
+def test_triage_s3_allow_policy_does_not_trigger_deny() -> None:
+    """Verify an Allow-only S3 bucket policy does not trigger confirmed explicit Deny finding."""
+    from cloudfirst_aid.models import EvidenceItem
+
+    fake_evidence = [
+        EvidenceItem(
+            id="E1",
+            scenario_id="CFA-020",
+            description="Bucket policy",
+            source="aws s3api get-bucket-policy",
+            observation='{"Statement": [{"Effect": "Allow", "Principal": "*", "Action": "s3:GetObject"}]}',
+            provenance="simulated",
+        )
+    ]
+    findings = triage_scenario("CFA-020", fake_evidence)
+    assert not any(f.status == FindingStatus.CONFIRMED.value and "deny" in f.description.lower() for f in findings)

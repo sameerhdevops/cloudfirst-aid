@@ -31,7 +31,7 @@ PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
 
 ## 4. Investigation Sequence
 
-### Step 1: Inspect the Private Subnet Route Table
+### Step 1: Inspect the Private Subnet Route Table (Read-only Diagnostic)
 - **Command:**
   ```bash
   aws ec2 describe-route-tables \
@@ -44,7 +44,7 @@ PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
   - Is `NatGatewayId` specified?
   - *Common Bug:* The route table only contains the local VPC CIDR (`10.0.0.0/16 -> local`), with no default route at all!
 
-### Step 2: Verify NAT Gateway State and Attached Elastic IP
+### Step 2: Verify NAT Gateway State and Attached Elastic IP (Read-only Diagnostic)
 - **Command:**
   ```bash
   aws ec2 describe-nat-gateways \
@@ -56,7 +56,7 @@ PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
   - `State`: Must be `available`. If `pending`, `deleting`, or `failed`, outbound traffic will fail.
   - Check the `SubnetId` hosting the NAT Gateway (e.g., `subnet-public456`). Note this subnet ID for Step 3.
 
-### Step 3: Verify NAT Gateway Subnet is Genuinely Public
+### Step 3: Verify NAT Gateway Subnet is Genuinely Public (Read-only Diagnostic)
 - **Why it matters:** The #1 architectural mistake is creating a NAT Gateway inside the private subnet it was meant to serve! A NAT Gateway located in a subnet without an Internet Gateway cannot route outbound packets.
 - **Command:**
   ```bash
@@ -69,7 +69,7 @@ PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
   - The subnet hosting the NAT Gateway MUST have a route `0.0.0.0/0 -> igw-xxxxxxxx`.
   - If the NAT Gateway's own subnet lacks an IGW route, the NAT Gateway is isolated and non-functional.
 
-### Step 4: Verify Subnet Network ACLs
+### Step 4: Verify Subnet Network ACLs (Read-only Diagnostic)
 - Check if NACLs associated with either the private subnet or the NAT Gateway's subnet are blocking outbound traffic or return ephemeral traffic (`1024-65535`).
 
 ## 5. Possible Causes & Likelihood
@@ -82,7 +82,7 @@ PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
 
 ## 6. Remediation
 
-### If Private Route Table Missing NAT Route:
+### If Private Route Table Missing NAT Route (AWS Infrastructure Change):
 Add default route targeting the NAT Gateway:
 ```bash
 aws ec2 create-route \
@@ -91,7 +91,7 @@ aws ec2 create-route \
   --nat-gateway-id nat-0123456789abcdef0
 ```
 
-### If NAT Gateway Was Launched in the Wrong Subnet:
+### If NAT Gateway Was Launched in the Wrong Subnet (AWS Infrastructure Change):
 1. Allocate an Elastic IP:
    ```bash
    aws ec2 allocate-address --domain vpc

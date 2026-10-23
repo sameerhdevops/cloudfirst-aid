@@ -25,7 +25,7 @@ debug1: Server accepts key: no
 
 ## 4. Investigation Sequence
 
-### Step 1: Verify the Default AMI Username
+### Step 1: Verify the Default AMI Username (Read-only Diagnostic)
 - **Why it matters:** Attempting to log into an Ubuntu instance with `ec2-user` or an Amazon Linux instance with `ubuntu` results in `Permission denied (publickey)`.
 - **Command:**
   ```bash
@@ -43,7 +43,7 @@ debug1: Server accepts key: no
   - SUSE Linux: `ec2-user`
   - Bitnami: `bitnami`
 
-### Step 2: Check Local Private Key File Permissions
+### Step 2: Check Local Private Key File Permissions (Read-only Diagnostic)
 - **Why it matters:** OpenSSH client requires private key files (`.pem`, `id_rsa`) to be readable only by the current owner. If permissions are too open, SSH ignores the key or aborts.
 - **On Linux/macOS:**
   ```bash
@@ -56,7 +56,7 @@ debug1: Server accepts key: no
   Get-Acl my-project-key.pem | Format-List
   ```
 
-### Step 3: Match Instance KeyPairName with Local Key
+### Step 3: Match Instance KeyPairName with Local Key (Read-only Diagnostic)
 - **Why it matters:** The EC2 console associates an instance with a specific named Key Pair at launch. If you use a different `.pem` file, authentication fails.
 - **Command:**
   ```bash
@@ -87,7 +87,7 @@ ssh -i my-project-key.pem ubuntu@203.0.113.50
 ssh -i my-project-key.pem ec2-user@203.0.113.50
 ```
 
-### If Key Permissions Were Too Open:
+### If Key Permissions Were Too Open (Local System Change):
 - **On Linux / macOS:**
   ```bash
   chmod 400 my-project-key.pem

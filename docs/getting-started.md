@@ -121,7 +121,7 @@ cloudfirst-aid triage CFA-020
 
 ## Generating Incident Reports
 
-Compile scenario metadata, diagnostic evidence, and triage findings into an audit-ready Markdown post-mortem report:
+Compile scenario metadata, diagnostic evidence, and triage findings into a structured Markdown post-mortem incident report:
 
 ```bash
 # Output report directly to terminal stdout:

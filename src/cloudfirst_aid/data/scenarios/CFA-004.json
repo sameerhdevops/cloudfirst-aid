@@ -1,0 +1,59 @@
+{
+  "id": "CFA-004",
+  "title": "EC2 Running but Application Unreachable",
+  "category": "ec2",
+  "difficulty": "beginner",
+  "severity": "high",
+  "symptom": "EC2 instance status is 2/2 passed, SSH works, but HTTP/HTTPS web requests fail or connection is refused.",
+  "initial_observations": [
+    "Instance responds to ping and SSH.",
+    "curl http://<ip> returns 'Connection refused' or hangs."
+  ],
+  "environment": "EC2 running Nginx/Node.js web application.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "ec2",
+    "application",
+    "ports",
+    "systemd"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Application process or web server stopped or crashed",
+      "likelihood": "common",
+      "evidence_needed": "systemctl status shows inactive or failed.",
+      "remediation": "Restart service using `sudo systemctl start nginx` and inspect error logs."
+    },
+    {
+      "cause": "Process listening only on localhost (127.0.0.1) instead of 0.0.0.0",
+      "likelihood": "common",
+      "evidence_needed": "ss -tlnp shows 127.0.0.1:8080 rather than 0.0.0.0:8080.",
+      "remediation": "Update application host binding configuration from 'localhost' / '127.0.0.1' to '0.0.0.0'."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Test Local Loopback Connectivity Inside Instance",
+      "command": "curl -I http://127.0.0.1:80",
+      "explanation": "Verify if the web server responds to local requests inside the instance.",
+      "what_to_look_for": "HTTP 200/301 response vs 'Failed to connect'."
+    },
+    {
+      "order": 2,
+      "title": "Inspect Listening TCP Sockets and Bound Interfaces",
+      "command": "sudo ss -tlnp",
+      "explanation": "Determine which processes are listening on which ports and IP addresses.",
+      "what_to_look_for": "Look for 0.0.0.0:80 or :::80 in the Local Address column."
+    }
+  ],
+  "verification": "curl -I http://<public-ip>:80 returns valid HTTP response.",
+  "prevention": [
+    "Enable systemd service auto-restart with `Restart=always`.",
+    "Configure process monitoring with Monit or CloudWatch agent."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/troubleshooting.html"
+  ]
+}
