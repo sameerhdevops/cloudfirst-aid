@@ -1,0 +1,29 @@
+[
+  {
+    "id": "SIM-EVID-CFA013-01",
+    "scenario_id": "CFA-013",
+    "description": "systemd unit status check (systemctl status)",
+    "source": "sudo systemctl status api-service.service --no-pager",
+    "observation": "● api-service.service - API Microservice Backend\n     Loaded: loaded (/etc/systemd/system/api-service.service; enabled; vendor preset: enabled)\n     Active: failed (Result: exit-code) since Wed 2026-10-23 04:15:22 UTC; 2min ago\n    Process: 28412 ExecStart=/opt/api-service/bin/server (code=exited, status=1/FAILURE)\n   Main PID: 28412 (code=exited, status=1/FAILURE)",
+    "provenance": "simulated",
+    "limitations": "Shows service failed with status=1."
+  },
+  {
+    "id": "SIM-EVID-CFA013-02",
+    "scenario_id": "CFA-013",
+    "description": "systemd journal error log (journalctl -u)",
+    "source": "sudo journalctl -u api-service.service -b --no-pager -n 10",
+    "observation": "Oct 23 04:15:22 ip-10-0-1-50 server[28412]: 2026/10/23 04:15:22 Starting HTTP listener on :8080\nOct 23 04:15:22 ip-10-0-1-50 server[28412]: 2026/10/23 04:15:22 listen tcp :8080: bind: Address already in use\nOct 23 04:15:22 ip-10-0-1-50 systemd[1]: api-service.service: Main process exited, code=exited, status=1/FAILURE\nOct 23 04:15:22 ip-10-0-1-50 systemd[1]: api-service.service: Failed with result 'exit-code'.",
+    "provenance": "simulated",
+    "limitations": "Explicitly captures 'bind: Address already in use' error."
+  },
+  {
+    "id": "SIM-EVID-CFA013-03",
+    "scenario_id": "CFA-013",
+    "description": "Listening socket inspection (ss -tlnp)",
+    "source": "sudo ss -tlnp 'sport = :8080'",
+    "observation": "State   Recv-Q  Send-Q   Local Address:Port   Peer Address:Port  Process\nLISTEN  0       128            0.0.0.0:8080        0.0.0.0:*      users:((\"old-api-daemon\",pid=14201,fd=4))",
+    "provenance": "simulated",
+    "limitations": "Proves PID 14201 (old-api-daemon) already occupies port 8080."
+  }
+]

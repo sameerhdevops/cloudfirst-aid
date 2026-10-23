@@ -1,0 +1,59 @@
+{
+  "id": "CFA-009",
+  "title": "Website Returns HTTP 504 Gateway Timeout",
+  "category": "application",
+  "difficulty": "intermediate",
+  "severity": "high",
+  "symptom": "Clients experience 60+ second page loading delay followed by '504 Gateway Time-out'.",
+  "initial_observations": [
+    "Reverse proxy or ALB accepts client connection, but backend fails to respond before timeout."
+  ],
+  "environment": "Application behind Application Load Balancer or Nginx reverse proxy.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "http-504",
+    "timeout",
+    "alb",
+    "database",
+    "slow-query"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Backend application blocked on slow database query or external API call",
+      "likelihood": "common",
+      "evidence_needed": "DB slow query log or high DB CPU; app threads stuck in I/O wait.",
+      "remediation": "Optimize slow SQL queries, add database indexes, or introduce caching layer (Redis)."
+    },
+    {
+      "cause": "Backend thread pool saturation / high CPU starvation",
+      "likelihood": "occasional",
+      "evidence_needed": "High CPU utilization (>95%) or worker queue overflow.",
+      "remediation": "Scale backend instances horizontally or increase worker concurrency."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Check Backend CPU, Memory, and Thread Saturation",
+      "command": "top -b -n 1 | head -n 15",
+      "explanation": "Evaluate if instance is CPU or memory saturated.",
+      "what_to_look_for": "High load average or CPU steal/wait."
+    },
+    {
+      "order": 2,
+      "title": "Inspect Proxy Upstream Response Time Logs",
+      "command": "sudo awk '{print $NF}' /var/log/nginx/access.log | tail -20",
+      "explanation": "Check upstream response time column.",
+      "what_to_look_for": "Upstream response times exceeding proxy timeout."
+    }
+  ],
+  "verification": "curl -w 'Total Time: %{time_total}s\\n' -o /dev/null -s http://localhost returns < 1.0s.",
+  "prevention": [
+    "Implement request timeouts at application layer lower than proxy idle timeout.",
+    "Add circuit breakers for external downstream calls."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-troubleshooting.html"
+  ]
+}

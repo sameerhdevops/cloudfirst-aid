@@ -1,0 +1,45 @@
+{
+  "id": "CFA-027",
+  "title": "Application Fails After EC2 Instance Reboot",
+  "category": "linux",
+  "difficulty": "beginner",
+  "severity": "high",
+  "symptom": "EC2 instance rebooted cleanly, but application is down and website returns connection refused.",
+  "initial_observations": [
+    "Instance is running.",
+    "systemctl is-enabled shows 'disabled' for the service."
+  ],
+  "environment": "Linux EC2 instance.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "linux",
+    "systemd",
+    "reboot",
+    "automation"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Service unit was never enabled for autostart across reboots",
+      "likelihood": "common",
+      "evidence_needed": "systemctl is-enabled myapp returns 'disabled'.",
+      "remediation": "Run `sudo systemctl enable myapp` and `sudo systemctl start myapp`."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Check Service Autostart State",
+      "command": "systemctl is-enabled myapp.service",
+      "explanation": "Check if unit has symlink in multi-user.target.wants.",
+      "what_to_look_for": "disabled."
+    }
+  ],
+  "verification": "systemctl is-enabled returns 'enabled'.",
+  "prevention": [
+    "Always run `systemctl enable --now <service>` during provisioning."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/troubleshooting.html"
+  ]
+}

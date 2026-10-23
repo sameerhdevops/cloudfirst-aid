@@ -1,0 +1,74 @@
+{
+  "id": "CFA-006",
+  "title": "EC2 Instance Unable to Access S3",
+  "category": "iam-s3",
+  "difficulty": "intermediate",
+  "severity": "high",
+  "symptom": "Application or CLI running on EC2 returns 'Unable to locate credentials' or 'AccessDenied' when running `aws s3 ls s3://my-bucket`.",
+  "initial_observations": [
+    "Instance is running.",
+    "Command fails when accessing AWS APIs from within the instance."
+  ],
+  "environment": "EC2 instance with or without an attached IAM Instance Profile.",
+  "has_runbook": true,
+  "has_demo": false,
+  "tags": [
+    "ec2",
+    "iam",
+    "s3",
+    "instance-profile",
+    "imds"
+  ],
+  "possible_causes": [
+    {
+      "cause": "No IAM Instance Profile attached to the EC2 instance",
+      "likelihood": "common",
+      "evidence_needed": "describe-instances shows IamInstanceProfile is null.",
+      "remediation": "Attach an IAM role to the instance using `aws ec2 associate-iam-instance-profile`."
+    },
+    {
+      "cause": "Attached IAM role lacks s3:GetObject or s3:ListBucket permissions",
+      "likelihood": "common",
+      "evidence_needed": "IAM role policy does not grant necessary action on target bucket ARN.",
+      "remediation": "Update role policy to include required s3 actions on `arn:aws:s3:::my-bucket` and `arn:aws:s3:::my-bucket/*`."
+    },
+    {
+      "cause": "IMDSv2 hop limit prevents container/SDK token retrieval",
+      "likelihood": "occasional",
+      "evidence_needed": "Instance metadata options show HttpPutResponseHopLimit=1 with containerized app.",
+      "remediation": "Increase HttpPutResponseHopLimit to 2 using `aws ec2 modify-instance-metadata-options`."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Check Attached IAM Instance Profile on EC2 Instance",
+      "command": "aws ec2 describe-instances --instance-ids i-0123456789abcdef0 --query 'Reservations[*].Instances[*].IamInstanceProfile'",
+      "explanation": "Verify an instance profile is associated with the instance.",
+      "what_to_look_for": "Arn and Id of attached instance profile."
+    },
+    {
+      "order": 2,
+      "title": "Query IMDS Credentials Endpoint From Inside Instance",
+      "command": "curl -H 'X-aws-ec2-metadata-token: ...' http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+      "explanation": "Verify instance metadata service is vending credentials.",
+      "what_to_look_for": "Role name returned by metadata service."
+    },
+    {
+      "order": 3,
+      "title": "Verify Caller Identity and Active IAM Policy",
+      "command": "aws sts get-caller-identity",
+      "explanation": "Confirm which role credentials the AWS CLI is currently using.",
+      "what_to_look_for": "Assumed-role ARN matching expected role name."
+    }
+  ],
+  "verification": "Run `aws s3 ls s3://my-bucket` from instance and verify bucket contents list successfully.",
+  "prevention": [
+    "Use IAM roles exclusively for EC2 workloads; never store static IAM access keys on instances.",
+    "Apply least-privilege IAM policies scoped to specific bucket ARNs."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/iam-roles-for-amazon-ec2.html",
+    "https://docs.aws.amazon.com/AmazonS3/latest/userguide/troubleshoot-access-denied.html"
+  ]
+}

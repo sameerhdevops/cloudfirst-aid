@@ -1,0 +1,30 @@
+graph TD
+    Client["Web Browser / Client"] -->|HTTPS:443 / DNS Query| R53["Amazon Route 53 (DNS)"]
+    R53 -.->|Resolves to| CF["Amazon CloudFront (CDN) / ACM TLS"]
+    CF -->|Origin Traffic| IGW["Internet Gateway (VPC: 10.0.0.0/16)"]
+
+    subgraph VPC["Amazon Virtual Private Cloud (10.0.0.0/16)"]
+        IGW --> PublicSubnet["Public Subnet (10.0.1.0/24)"]
+        
+        subgraph PublicTier["Public Tier"]
+            PublicSubnet --> ALB["Application Load Balancer (ALB SG)"]
+            PublicSubnet --> NATGW["NAT Gateway (Elastic IP)"]
+        end
+
+        ALB -->|TCP:8080 Target Group Health Check| AppSubnet["Private App Subnet (10.0.2.0/24)"]
+
+        subgraph PrivateTier["Private Application Tier"]
+            AppSubnet --> EC2A["EC2 App Instance 1 (App SG)"]
+            AppSubnet --> EC2B["EC2 App Instance 2 (App SG)"]
+            EC2A -->|Egress to Internet via 0.0.0.0/0| NATGW
+            EC2A -->|IAM Instance Profile| S3Endpoint["S3 Gateway VPC Endpoint"]
+        end
+
+        subgraph DatabaseTier["Isolated Database Tier"]
+            EC2A -->|TCP:3306 DB SG| RDSPrimary["Amazon RDS MySQL Primary (Multi-AZ)"]
+            RDSPrimary -.->|Synchronous Replication| RDSStandby["Amazon RDS Standby Replica"]
+        end
+    end
+
+    S3Endpoint --> S3Bucket["Amazon S3 Bucket (App Assets & Backups)"]
+    EC2A -.->|CloudWatch Agent| CW["Amazon CloudWatch (Metrics, Logs, Alarms)"]

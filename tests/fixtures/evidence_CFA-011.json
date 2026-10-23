@@ -1,0 +1,20 @@
+[
+  {
+    "id": "SIM-EVID-CFA011-01",
+    "scenario_id": "CFA-011",
+    "description": "Inode allocation check across filesystems (df -i)",
+    "source": "df -i",
+    "observation": "Filesystem      Inodes   IUsed   IFree IUse% Mounted on\ndevtmpfs        486214     342  485872    1% /dev\ntmpfs           488210       1  488209    1% /dev/shm\ntmpfs           488210     412  487798    1% /run\n/dev/xvda1     1310720 1310720       0  100% /\ntmpfs           488210       1  488209    1% /sys/fs/cgroup",
+    "provenance": "simulated",
+    "limitations": "Shows root partition has exhausted 100% of its 1,310,720 available inodes."
+  },
+  {
+    "id": "SIM-EVID-CFA011-02",
+    "scenario_id": "CFA-011",
+    "description": "Top directory file counts (find | uniq -c)",
+    "source": "sudo find /var/spool/postfix/maildrop -type f | wc -l",
+    "observation": "1198420 /var/spool/postfix/maildrop",
+    "provenance": "simulated",
+    "limitations": "Confirms over 1.1 million small orphan maildrop queue files."
+  }
+]

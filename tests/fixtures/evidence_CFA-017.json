@@ -1,0 +1,20 @@
+[
+  {
+    "id": "SIM-EVID-CFA017-01",
+    "scenario_id": "CFA-017",
+    "description": "Application Load Balancer target health query",
+    "source": "aws elbv2 describe-target-health --target-group-arn arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web-targets/abcdef123456",
+    "observation": "{\n  \"TargetHealthDescriptions\": [\n    {\n      \"Target\": {\"Id\": \"i-0123456789abcdef0\", \"Port\": 8080},\n      \"TargetHealth\": {\n        \"State\": \"unhealthy\",\n        \"Reason\": \"Target.Timeout\",\n        \"Description\": \"Connection to target timed out while health checking\"\n      }\n    },\n    {\n      \"Target\": {\"Id\": \"i-0fedcba9876543210\", \"Port\": 8080},\n      \"TargetHealth\": {\n        \"State\": \"unhealthy\",\n        \"Reason\": \"Target.Timeout\",\n        \"Description\": \"Connection to target timed out while health checking\"\n      }\n    }\n  ]\n}",
+    "provenance": "simulated",
+    "limitations": "ALB reports all target instances unhealthy due to Target.Timeout."
+  },
+  {
+    "id": "SIM-EVID-CFA017-02",
+    "scenario_id": "CFA-017",
+    "description": "Target Security Group ingress configuration",
+    "source": "aws ec2 describe-security-groups --group-ids sg-target-instance",
+    "observation": "[\n  {\n    \"GroupId\": \"sg-target-instance\",\n    \"GroupName\": \"app-target-sg\",\n    \"IpPermissions\": [\n      {\n        \"FromPort\": 22,\n        \"ToPort\": 22,\n        \"IpProtocol\": \"tcp\",\n        \"IpRanges\": [{\"CidrIp\": \"10.0.0.0/16\"}]\n      }\n    ]\n  }\n]",
+    "provenance": "simulated",
+    "limitations": "Target instance security group completely lacks an inbound rule for port 8080 from the ALB security group."
+  }
+]

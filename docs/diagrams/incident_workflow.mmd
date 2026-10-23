@@ -1,0 +1,27 @@
+flowchart TD
+    Start(["Customer Alert / Monitoring Alarm"]) --> Triage0["Initial Observation: Capture exact error string & timestamp"]
+    Triage0 --> Scope["Establish Scope: 1 user, all users, or specific region?"]
+    Scope --> Freeze{"Before Changing Anything:<br/>Do we have diagnostic baseline?"}
+    
+    Freeze -->|No| Collect["Collect Diagnostic Evidence:<br/>df -h, ss -tlnp, describe-security-groups, logs"]
+    Freeze -->|Yes| Analyze["Evaluate Evidence Against Hypotheses"]
+
+    Collect --> Analyze
+    
+    Analyze --> CheckSufficient{"Is evidence sufficient<br/>to confirm single root cause?"}
+    
+    CheckSufficient -->|Insufficient Evidence| BranchInvestigate["Branch: Needs Further Investigation<br/>Gather network traces, journalctl, or deeper logs"]
+    BranchInvestigate --> Collect
+
+    CheckSufficient -->|Confirmed Root Cause| RemediationPlan["Formulate Safe Remediation Plan<br/>(Prefer non-destructive, reversible steps)"]
+    
+    RemediationPlan --> Execute["Apply Fix (e.g. update SG rule, truncate runaway log)"]
+    Execute --> Verification["Verification: Did fix resolve symptom without regressions?"]
+    
+    Verification --> Success{"Verification Passed?"}
+    Success -->|No| Rollback["Rollback to safe state & re-evaluate"]
+    Rollback --> Analyze
+    
+    Success -->|Yes| Report["Document: Generate Incident Report & Audit Trail"]
+    Report --> Prevention["Prevention: Update CloudWatch alarms, runbooks, or IaC"]
+    Prevention --> Done(["Incident Closed"])

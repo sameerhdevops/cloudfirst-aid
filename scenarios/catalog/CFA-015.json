@@ -1,0 +1,52 @@
+{
+  "id": "CFA-015",
+  "title": "Process Cannot Bind to Port (EADDRINUSE)",
+  "category": "linux",
+  "difficulty": "beginner",
+  "severity": "medium",
+  "symptom": "Starting application fails with error: 'bind: Address already in use' or port collision.",
+  "initial_observations": [
+    "Previous instance of daemon was killed or crashed.",
+    "Port 80, 443, or 8080 cannot be bound."
+  ],
+  "environment": "Linux server.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "linux",
+    "networking",
+    "ports",
+    "ss",
+    "lsof"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Orphaned or zombie daemon process still holding the listening socket",
+      "likelihood": "common",
+      "evidence_needed": "ss -tlnp shows existing PID bound to target port.",
+      "remediation": "Terminate rogue process via `kill -15 <PID>` (or `kill -9 <PID>` if unresponsive)."
+    },
+    {
+      "cause": "Socket currently lingering in TIME_WAIT state",
+      "likelihood": "occasional",
+      "evidence_needed": "ss -tan shows socket state TIME_WAIT.",
+      "remediation": "Enable SO_REUSEADDR in application server configuration."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Identify Process Holding the Port",
+      "command": "sudo ss -tlnp 'sport = :8080'",
+      "explanation": "List PID and program name currently bound to the port.",
+      "what_to_look_for": "users:((\"node\",pid=1234,fd=19))."
+    }
+  ],
+  "verification": "Application starts and successfully opens listening socket.",
+  "prevention": [
+    "Configure graceful process shutdown and SO_REUSEADDR socket option."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/troubleshooting.html"
+  ]
+}

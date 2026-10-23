@@ -1,0 +1,46 @@
+{
+  "id": "CFA-025",
+  "title": "Two EC2 Instances in Same VPC Cannot Communicate",
+  "category": "networking",
+  "difficulty": "beginner",
+  "severity": "high",
+  "symptom": "Instance A cannot reach Instance B on internal private IP (`ping 10.0.2.15` fails or times out).",
+  "initial_observations": [
+    "Both instances are in the same VPC but different subnets.",
+    "Local OS firewall or Security Group drops traffic."
+  ],
+  "environment": "AWS VPC with multiple subnets.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "vpc",
+    "networking",
+    "security-groups",
+    "ping",
+    "nacl"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Instance B Security Group does not allow traffic from Instance A Security Group",
+      "likelihood": "common",
+      "evidence_needed": "Security Group B ingress rules do not reference SG A or Subnet A CIDR.",
+      "remediation": "Add ingress rule in SG B allowing desired protocol/port from SG A."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Check Security Group Rules on Both Instances",
+      "command": "aws ec2 describe-security-groups --group-ids sg-instA sg-instB",
+      "explanation": "Verify ingress on target instance allows source instance.",
+      "what_to_look_for": "Missing rule for ICMP or TCP port."
+    }
+  ],
+  "verification": "Ping or curl from Instance A to Instance B succeeds.",
+  "prevention": [
+    "Use VPC-wide internal security group allowing internal communication where required."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/vpc/latest/userguide/VPC_SecurityGroups.html"
+  ]
+}

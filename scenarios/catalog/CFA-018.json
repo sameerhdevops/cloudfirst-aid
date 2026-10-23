@@ -1,0 +1,59 @@
+{
+  "id": "CFA-018",
+  "title": "Private Subnet Instance Cannot Access Internet via NAT Gateway",
+  "category": "networking",
+  "difficulty": "intermediate",
+  "severity": "high",
+  "symptom": "EC2 instance in a private subnet cannot connect to external internet endpoints (yum, external APIs).",
+  "initial_observations": [
+    "Instance has private IP only.",
+    "Traffic destined for 0.0.0.0/0 is dropped."
+  ],
+  "environment": "AWS VPC with public subnet, private subnet, and NAT Gateway.",
+  "has_runbook": true,
+  "has_demo": false,
+  "tags": [
+    "vpc",
+    "nat-gateway",
+    "networking",
+    "routing",
+    "private-subnet"
+  ],
+  "possible_causes": [
+    {
+      "cause": "NAT Gateway was mistakenly placed in the private subnet instead of the public subnet",
+      "likelihood": "common",
+      "evidence_needed": "NAT Gateway subnet lacks route to Internet Gateway.",
+      "remediation": "Deploy NAT Gateway in a public subnet that has an explicit route to an Internet Gateway."
+    },
+    {
+      "cause": "Private subnet route table missing default route to the NAT Gateway (0.0.0.0/0 -> nat-xxx)",
+      "likelihood": "common",
+      "evidence_needed": "Private route table only contains local VPC CIDR route.",
+      "remediation": "Add route 0.0.0.0/0 with target set to the NAT Gateway ID."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Inspect Route Table Associated with Private Subnet",
+      "command": "aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=subnet-private --query 'RouteTables[*].Routes'",
+      "explanation": "Confirm private subnet routes 0.0.0.0/0 to nat-xxxxxxxx.",
+      "what_to_look_for": "Destination 0.0.0.0/0 with NatGatewayId."
+    },
+    {
+      "order": 2,
+      "title": "Verify NAT Gateway Placement Subnet and Public Route",
+      "command": "aws ec2 describe-nat-gateways --nat-gateway-ids nat-xxxx",
+      "explanation": "Check which subnet hosts the NAT Gateway and verify that subnet's route table.",
+      "what_to_look_for": "NAT Gateway's subnet must have an igw-xxxx default route."
+    }
+  ],
+  "verification": "From private instance: `curl -I https://checkip.amazonaws.com` returns successfully.",
+  "prevention": [
+    "Use VPC Reachability Analyzer to validate end-to-end paths before going to production."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-troubleshooting.html"
+  ]
+}

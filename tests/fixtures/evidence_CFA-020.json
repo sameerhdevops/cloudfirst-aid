@@ -1,0 +1,20 @@
+[
+  {
+    "id": "SIM-EVID-CFA020-01",
+    "scenario_id": "CFA-020",
+    "description": "AWS S3 CLI operation error response",
+    "source": "aws s3 cp s3://company-prod-data/financials.csv .",
+    "observation": "fatal error: An error occurred (AccessDenied) when calling the GetObject operation: Access Denied",
+    "provenance": "simulated",
+    "limitations": "Standard S3 AccessDenied response returned to IAM caller."
+  },
+  {
+    "id": "SIM-EVID-CFA020-02",
+    "scenario_id": "CFA-020",
+    "description": "S3 Bucket Policy inspection",
+    "source": "aws s3api get-bucket-policy --bucket company-prod-data --output text",
+    "observation": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"DenyUnencryptedTraffic\",\n      \"Effect\": \"Deny\",\n      \"Principal\": \"*\",\n      \"Action\": \"s3:*\",\n      \"Resource\": [\n        \"arn:aws:s3:::company-prod-data\",\n        \"arn:aws:s3:::company-prod-data/*\"\n      ],\n      \"Condition\": {\n        \"Bool\": {\n          \"aws:SecureTransport\": \"false\"\n        }\n      }\n    },\n    {\n      \"Sid\": \"RestrictToVpcEndpoint\",\n      \"Effect\": \"Deny\",\n      \"Principal\": \"*\",\n      \"Action\": \"s3:*\",\n      \"Resource\": \"arn:aws:s3:::company-prod-data/*\",\n      \"Condition\": {\n        \"StringNotEquals\": {\n          \"aws:sourceVpce\": \"vpce-1a2b3c4d\"\n        }\n      }\n    }\n  ]\n}",
+    "provenance": "simulated",
+    "limitations": "Bucket policy enforces an explicit Deny for any request not originating from VPC Endpoint vpce-1a2b3c4d."
+  }
+]

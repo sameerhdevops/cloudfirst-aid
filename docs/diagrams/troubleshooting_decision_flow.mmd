@@ -1,0 +1,19 @@
+flowchart TD
+    Start(["Website Unreachable / Error"]) --> CheckType{"What is the exact HTTP response or symptom?"}
+
+    CheckType -->|Connection Timed Out| CheckNet{"Can client complete TCP handshake to port 80/443?"}
+    CheckNet -->|No| SG["Check Security Group: Is port 80/443 open to client CIDR?"]
+    CheckNet -->|Yes| Route["Check Subnet Route Table: Is 0.0.0.0/0 routed to IGW?"]
+
+    CheckType -->|Connection Refused| Refused{"Is web server process active & listening?"}
+    Refused -->|Process Dead| StartSvc["Run: systemctl status nginx / gunicorn<br/>Inspect journalctl -u for crash trace"]
+    Refused -->|Listening on 127.0.0.1| BindFix["Process bound to localhost loopback!<br/>Rebind application to 0.0.0.0"]
+
+    CheckType -->|HTTP 502 Bad Gateway| FiveZeroTwo{"ALB or Reverse Proxy cannot reach upstream backend"}
+    FiveZeroTwo --> UpstreamCheck["1. Check backend daemon status<br/>2. Verify target SG allows proxy SG<br/>3. Check ALB target health: describe-target-health"]
+
+    CheckType -->|HTTP 504 Gateway Timeout| FiveZeroFour{"Backend is running but too slow"}
+    FiveZeroFour --> TimeoutCheck["1. Check RDS slow query logs & DB CPU<br/>2. Inspect top / free for high load average<br/>3. Verify backend keepalive > ALB timeout"]
+
+    CheckType -->|HTTP 403 Forbidden| FourZeroThree{"Web server permissions issue"}
+    FourZeroThree --> PermCheck["1. Verify file owner matching web server user<br/>2. Ensure directory has execute +x bit<br/>3. Check S3 bucket policy if S3-hosted"]

@@ -1,0 +1,24 @@
+graph TD
+    User["CLI User / Fresher Engineer"] -->|cloudfirst-aid list / show / triage / report| CLI["CLI Entrypoint (cli.py)"]
+
+    subgraph CoreEngine["CloudFirst Aid Core Engine"]
+        CLI --> CatalogLoader["Catalog Loader & Validator (catalog.py)"]
+        CLI --> TriageEngine["Deterministic Triage Engine (triage.py)"]
+        CLI --> ReportGen["Incident Report Generator (reports.py)"]
+        CLI -.->|Explicit opt-in| AWSInspector["Read-Only AWS Inspector (aws_readonly.py)"]
+
+        TriageEngine -->|Evaluates| Rules["Diagnostic Rules (Scenario-Specific)"]
+        TriageEngine -->|Produces| Findings["Findings (Observed / Supported / Confirmed)"]
+    end
+
+    subgraph DataSources["Data Assets & Catalog"]
+        CatalogLoader --> CatalogFiles["30 Structured Scenarios (scenarios/catalog/*.json)"]
+        TriageEngine --> Fixtures["Evidence Fixtures (tests/fixtures/evidence_*.json)"]
+        TriageEngine -.-> LocalCollector["Safe Local Script (collect_linux_diagnostics.sh)"]
+        AWSInspector -.->|Boto3 Read-Only Describe*| LiveAWS["AWS APIs (Live EC2/VPC Snapshot)"]
+    end
+
+    subgraph Outputs["Output Artifacts"]
+        ReportGen --> MarkdownReport["Audit-Ready Incident Report (reports/*.md)"]
+        CatalogFiles -.-> Runbooks["14 Detailed Field Runbooks (runbooks/*/*.md)"]
+    end

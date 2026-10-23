@@ -1,0 +1,29 @@
+[
+  {
+    "id": "SIM-EVID-CFA010-01",
+    "scenario_id": "CFA-010",
+    "description": "Filesystem block usage output (df -h)",
+    "source": "df -h",
+    "observation": "Filesystem      Size  Used Avail Use% Mounted on\ndevtmpfs        1.9G     0  1.9G   0% /dev\ntmpfs           1.9G     0  1.9G   0% /dev/shm\ntmpfs           1.9G  440K  1.9G   1% /run\n/dev/xvda1       20G   20G     0 100% /\ntmpfs           1.9G     0  1.9G   0% /sys/fs/cgroup",
+    "provenance": "simulated",
+    "limitations": "Simulated df -h output showing 100% capacity on the root partition."
+  },
+  {
+    "id": "SIM-EVID-CFA010-02",
+    "scenario_id": "CFA-010",
+    "description": "Top storage directory disk consumption (du -sh /var/*)",
+    "source": "sudo du -sh /var/* 2>/dev/null | sort -hr | head -n 5",
+    "observation": "16G\t/var/log\n1.2G\t/var/lib\n120M\t/var/cache\n4.0K\t/var/tmp\n4.0K\t/var/spool",
+    "provenance": "simulated",
+    "limitations": "Shows /var/log consumes 16GB out of 20GB total volume capacity."
+  },
+  {
+    "id": "SIM-EVID-CFA010-03",
+    "scenario_id": "CFA-010",
+    "description": "Top storage-consuming files in /var/log",
+    "source": "sudo ls -lhS /var/log | head -n 5",
+    "observation": "total 16G\n-rw-r--r-- 1 root root  14G Oct 23 04:12 app-transaction-debug.log\n-rw-r--r-- 1 root root 1.8G Oct 23 04:12 syslog\n-rw-r----- 1 root adm  180M Oct 23 03:00 messages",
+    "provenance": "simulated",
+    "limitations": "Isolates unrotated app-transaction-debug.log as the primary consumer."
+  }
+]

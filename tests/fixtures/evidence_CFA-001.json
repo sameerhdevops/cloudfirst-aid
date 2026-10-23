@@ -1,0 +1,29 @@
+[
+  {
+    "id": "SIM-EVID-CFA001-01",
+    "scenario_id": "CFA-001",
+    "description": "Verbose OpenSSH client connection trace",
+    "source": "ssh -vvv -i mykey.pem ec2-user@203.0.113.10",
+    "observation": "OpenSSH_8.9p1 Ubuntu-3ubuntu0.6, OpenSSL 3.0.2 15 Mar 2022\ndebug1: Connecting to 203.0.113.10 [203.0.113.10] port 22.\ndebug1: connect to address 203.0.113.10 port 22: Connection timed out\nssh: connect to host 203.0.113.10 port 22: Connection timed out",
+    "provenance": "simulated",
+    "limitations": "Simulated SSH client failure output representing typical TCP connection timeout."
+  },
+  {
+    "id": "SIM-EVID-CFA001-02",
+    "scenario_id": "CFA-001",
+    "description": "AWS EC2 instance state query",
+    "source": "aws ec2 describe-instances --instance-ids i-0123456789abcdef0 --query 'Reservations[0].Instances[0].State.Name'",
+    "observation": "\"running\"",
+    "provenance": "simulated",
+    "limitations": "Simulated EC2 describe-instances response confirming instance is booted."
+  },
+  {
+    "id": "SIM-EVID-CFA001-03",
+    "scenario_id": "CFA-001",
+    "description": "Security Group ingress rules evaluation",
+    "source": "aws ec2 describe-security-groups --group-ids sg-0123456789abcdef0 --query 'SecurityGroups[0].IpPermissions'",
+    "observation": "[\n  {\n    \"FromPort\": 80,\n    \"IpProtocol\": \"tcp\",\n    \"IpRanges\": [{\"CidrIp\": \"0.0.0.0/0\"}],\n    \"ToPort\": 80\n  }\n]",
+    "provenance": "simulated",
+    "limitations": "Security Group only permits port 80. Port 22 has no rule; inbound SSH traffic is dropped."
+  }
+]

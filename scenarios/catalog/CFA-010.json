@@ -1,0 +1,68 @@
+{
+  "id": "CFA-010",
+  "title": "Linux Root Filesystem 100% Full",
+  "category": "linux",
+  "difficulty": "beginner",
+  "severity": "critical",
+  "symptom": "Applications crash, services fail to write logs, and shell warns: 'No space left on device'.",
+  "initial_observations": [
+    "df -h shows / mounted on /dev/xvda1 is at 100% capacity (0 bytes available).",
+    "Command line tab completion and temporary files fail."
+  ],
+  "environment": "Amazon Linux 2 / Ubuntu EC2 instance.",
+  "has_runbook": true,
+  "has_demo": true,
+  "tags": [
+    "linux",
+    "disk",
+    "storage",
+    "df",
+    "du",
+    "logrotate"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Unrotated or runaway log files in /var/log",
+      "likelihood": "common",
+      "evidence_needed": "du -sh /var/log/* reveals single log file tens of gigabytes in size.",
+      "remediation": "Truncate runaway log file (`> /var/log/app.log`) and configure proper logrotate policy."
+    },
+    {
+      "cause": "Deleted large files still held open by a running process",
+      "likelihood": "occasional",
+      "evidence_needed": "lsof +L1 shows unlinked files holding open file descriptors with non-zero size.",
+      "remediation": "Restart the process holding the file descriptor open or truncate via `/proc/$PID/fd/$FD`."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Check Disk Capacity by Mount Point",
+      "command": "df -h",
+      "explanation": "Identify exactly which filesystem mount is exhausted.",
+      "what_to_look_for": "Mount point showing 100% Use% and 0 Available."
+    },
+    {
+      "order": 2,
+      "title": "Identify Top Storage-Consuming Directories",
+      "command": "sudo du -h --max-depth=1 / 2>/dev/null | sort -hr | head -n 10",
+      "explanation": "Recursively isolate which top-level directory contains the excess data.",
+      "what_to_look_for": "Directory consuming disproportionate volume of disk space."
+    },
+    {
+      "order": 3,
+      "title": "Detect Deleted Files Held Open by Processes",
+      "command": "sudo lsof / | grep -i deleted",
+      "explanation": "When rm is run on an open file, space is not released until process closes the file handle.",
+      "what_to_look_for": "Process name and large size associated with (deleted) file."
+    }
+  ],
+  "verification": "Execute `df -h /` and verify Use% is below 80%.",
+  "prevention": [
+    "Configure logrotate with size caps and compression.",
+    "Set up CloudWatch disk metric alarms using CloudWatch agent."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/troubleshooting.html"
+  ]
+}

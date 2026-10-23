@@ -1,0 +1,60 @@
+{
+  "id": "CFA-003",
+  "title": "EC2 Instance Fails Status Check (1/2 or 0/2)",
+  "category": "ec2",
+  "difficulty": "intermediate",
+  "severity": "critical",
+  "symptom": "AWS Management Console shows 'Status check failed' (1/2 or 0/2 checks passed) for an active EC2 instance.",
+  "initial_observations": [
+    "System status check failed OR instance status check failed.",
+    "Instance may be unreachable via SSH and application traffic."
+  ],
+  "environment": "EC2 instance running in AWS with attached EBS root volume.",
+  "has_runbook": true,
+  "has_demo": false,
+  "tags": [
+    "ec2",
+    "status-check",
+    "hardware",
+    "kernel",
+    "ebs"
+  ],
+  "possible_causes": [
+    {
+      "cause": "System Status Check failure (underlying AWS physical hardware/host problem)",
+      "likelihood": "occasional",
+      "evidence_needed": "SystemStatus.Status == 'impaired' in describe-instance-status.",
+      "remediation": "Stop and then Start the EC2 instance (forces migration to a new healthy underlying physical host)."
+    },
+    {
+      "cause": "Instance Status Check failure (guest OS kernel panic, corrupt filesystem, /etc/fstab error)",
+      "likelihood": "common",
+      "evidence_needed": "InstanceStatus.Status == 'impaired'; console system log shows kernel panic or mount error.",
+      "remediation": "Retrieve EC2 system log. If fstab/kernel corrupt, detach root volume, attach to rescue instance, fix fstab/grub, reattach."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Query Specific Status Check State",
+      "command": "aws ec2 describe-instance-status --instance-ids i-0123456789abcdef0",
+      "explanation": "Distinguish between SystemStatus (AWS hardware) and InstanceStatus (guest OS).",
+      "what_to_look_for": "Look at SystemStatus.Status and InstanceStatus.Status fields."
+    },
+    {
+      "order": 2,
+      "title": "Retrieve EC2 Console Output (System Log)",
+      "command": "aws ec2 get-console-output --instance-id i-0123456789abcdef0 --output text",
+      "explanation": "Inspect boot log for kernel panics, OOM conditions, or bad /etc/fstab entries.",
+      "what_to_look_for": "Look for 'Emergency mode', 'fsck failed', or 'Kernel panic'."
+    }
+  ],
+  "verification": "After remediation, monitor `aws ec2 describe-instance-status` until both checks return 'passed'.",
+  "prevention": [
+    "Configure CloudWatch alarm with EC2 auto-recovery action for System Status check failures.",
+    "Use 'nofail' mount options in /etc/fstab for non-root volumes."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/monitoring-system-instance-status-check.html"
+  ]
+}

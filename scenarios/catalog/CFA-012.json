@@ -1,0 +1,61 @@
+{
+  "id": "CFA-012",
+  "title": "High CPU or Memory Usage / OOM-Killer Triggered",
+  "category": "linux",
+  "difficulty": "intermediate",
+  "severity": "high",
+  "symptom": "Instance is sluggish, SSH sessions lag, and backend process dies unexpectedly with exit code 137.",
+  "initial_observations": [
+    "High load average.",
+    "dmesg shows 'Out of memory: Kill process'."
+  ],
+  "environment": "EC2 t3.small or t3.medium instance running memory-intensive workloads.",
+  "has_runbook": true,
+  "has_demo": false,
+  "tags": [
+    "linux",
+    "memory",
+    "oom",
+    "cpu",
+    "dmesg",
+    "top"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Memory leak in application process causing OS Out-Of-Memory (OOM) killer invocation",
+      "likelihood": "common",
+      "evidence_needed": "dmesg logs showing 'kernel: Out of memory: Kill process <PID> (<name>) score <score>'.",
+      "remediation": "Restart service, analyze heap dumps, configure swap file as buffer, and scale instance RAM size."
+    },
+    {
+      "cause": "Runaway worker process consuming 100% CPU",
+      "likelihood": "common",
+      "evidence_needed": "top shows process at 99.9% %CPU continuously.",
+      "remediation": "Identify thread deadlock or infinite loop; restart worker and patch bug."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Check Real-Time Memory and Process Consumption",
+      "command": "free -h && ps aux --sort=-%mem | head -n 10",
+      "explanation": "Inspect total, used, and available RAM and top memory consuming processes.",
+      "what_to_look_for": "Available memory near 0, process consuming majority of memory."
+    },
+    {
+      "order": 2,
+      "title": "Check Kernel Ring Buffer for OOM Killer Events",
+      "command": "sudo dmesg -T | grep -iE 'oom|out of memory|killed process' | tail -15",
+      "explanation": "Look for explicit Linux kernel OOM killer actions and process termination records.",
+      "what_to_look_for": "Timestamped 'Killed process' lines."
+    }
+  ],
+  "verification": "free -h shows healthy available memory and application is running without OOM kills.",
+  "prevention": [
+    "Enable swap space on EBS volume for burst absorption.",
+    "Configure memory limits via systemd cgroups (MemoryMax=...)."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/troubleshooting.html"
+  ]
+}

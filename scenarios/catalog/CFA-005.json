@@ -1,0 +1,58 @@
+{
+  "id": "CFA-005",
+  "title": "EC2 Outbound Internet Access Fails",
+  "category": "ec2",
+  "difficulty": "intermediate",
+  "severity": "high",
+  "symptom": "Instance cannot run `yum update` or reach external APIs (curl https://aws.amazon.com hangs).",
+  "initial_observations": [
+    "Inbound SSH works, but outbound HTTP/HTTPS times out.",
+    "DNS queries may fail or hang."
+  ],
+  "environment": "EC2 in VPC subnet.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "ec2",
+    "networking",
+    "egress",
+    "security-groups"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Security Group outbound rules deleted or restricted",
+      "likelihood": "common",
+      "evidence_needed": "describe-security-groups showing no egress rule for 0.0.0.0/0.",
+      "remediation": "Add egress rule allowing all traffic (or TCP 80/443) to 0.0.0.0/0."
+    },
+    {
+      "cause": "Subnet route table has no route to IGW or NAT Gateway",
+      "likelihood": "common",
+      "evidence_needed": "Route table missing 0.0.0.0/0 destination.",
+      "remediation": "Add 0.0.0.0/0 route to Internet Gateway (if public) or NAT Gateway (if private)."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Inspect Security Group Egress Rules",
+      "command": "aws ec2 describe-security-groups --group-ids sg-xxxx --query 'SecurityGroups[*].IpPermissionsEgress'",
+      "explanation": "Verify outbound rules allow egress.",
+      "what_to_look_for": "Look for 0.0.0.0/0 allow rule."
+    },
+    {
+      "order": 2,
+      "title": "Check Subnet Route Table",
+      "command": "aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=subnet-xxxx",
+      "explanation": "Check for default gateway route.",
+      "what_to_look_for": "Default route pointing to igw or nat."
+    }
+  ],
+  "verification": "Run `curl -I https://aws.amazon.com` inside instance and verify 200/301 status.",
+  "prevention": [
+    "Do not remove default allow-all egress rule from Security Groups unless egress proxy is deployed."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/vpc/latest/userguide/VPC_SecurityGroups.html"
+  ]
+}

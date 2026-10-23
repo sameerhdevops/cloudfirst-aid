@@ -1,0 +1,51 @@
+{
+  "id": "CFA-023",
+  "title": "CloudWatch Alarm Does Not Trigger Action",
+  "category": "monitoring",
+  "difficulty": "intermediate",
+  "severity": "medium",
+  "symptom": "CloudWatch metric breached threshold, but no SNS email was sent and alarm remains in INSUFFICIENT_DATA or OK.",
+  "initial_observations": [
+    "Expected alert was never received.",
+    "Alarm history shows no state transition to ALARM."
+  ],
+  "environment": "AWS CloudWatch Alarm with SNS topic subscription.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "cloudwatch",
+    "sns",
+    "monitoring",
+    "alarms"
+  ],
+  "possible_causes": [
+    {
+      "cause": "Alarm metric dimension mismatch (e.g. alarm configured for different instance ID or dimension)",
+      "likelihood": "common",
+      "evidence_needed": "Metric dimensions in alarm definition do not match emitted metric dimensions.",
+      "remediation": "Update alarm dimensions to match exact metric namespace and dimension key-values."
+    },
+    {
+      "cause": "Actions only trigger on state TRANSITIONS (OK -> ALARM); alarm was already in ALARM",
+      "likelihood": "common",
+      "evidence_needed": "Alarm history shows no new state transition occurred during breach.",
+      "remediation": "Acknowledge that CloudWatch alarms notify only when state changes, not on each evaluation period."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Inspect Alarm Evaluation History",
+      "command": "aws cloudwatch describe-alarm-history --alarm-name my-alarm --max-items 10 --output table",
+      "explanation": "Review timestamps of every state evaluation and action execution.",
+      "what_to_look_for": "HistoryItemType Action or StateUpdate entries."
+    }
+  ],
+  "verification": "Alarm history records successful execution of SNS publish action on state change.",
+  "prevention": [
+    "Set appropriate 'Treat missing data as' policy (e.g. treat as breaching for availability alarms)."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/AlarmThatSendsEmail.html"
+  ]
+}

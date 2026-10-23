@@ -1,0 +1,45 @@
+{
+  "id": "CFA-029",
+  "title": "Route 53 DNS Resolution Returns Stale IP",
+  "category": "networking",
+  "difficulty": "intermediate",
+  "severity": "medium",
+  "symptom": "DNS record was updated in Route 53, but clients continue resolving the old IP address.",
+  "initial_observations": [
+    "Route 53 console shows new IP.",
+    "Local `dig` or `nslookup` queries still return old IP."
+  ],
+  "environment": "AWS Route 53 Hosted Zone.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "route53",
+    "dns",
+    "ttl",
+    "networking"
+  ],
+  "possible_causes": [
+    {
+      "cause": "High DNS TTL (Time To Live) causing public resolvers to cache old record",
+      "likelihood": "common",
+      "evidence_needed": "Querying Route 53 authoritative nameserver returns new IP, but public 8.8.8.8 returns old IP.",
+      "remediation": "Wait for TTL expiration or lower TTL to 60 seconds well in advance of planned migrations."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Query Route 53 Authoritative Nameservers Directly",
+      "command": "dig @ns-xxxx.awsdns-xx.com mydomain.com A +noall +answer",
+      "explanation": "Bypass recursive resolver caching by querying authoritative nameservers directly.",
+      "what_to_look_for": "Verify authoritative server immediately returns updated IP."
+    }
+  ],
+  "verification": "dig mydomain.com returns the updated IP address across public resolvers.",
+  "prevention": [
+    "Lower TTL to 60-300 seconds 24-48 hours prior to DNS migrations."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/troubleshooting-new-dns-settings-not-in-effect.html"
+  ]
+}

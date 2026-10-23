@@ -1,0 +1,52 @@
+{
+  "id": "CFA-028",
+  "title": "HTTPS / TLS Certificate Failure on Custom Domain",
+  "category": "application",
+  "difficulty": "intermediate",
+  "severity": "high",
+  "symptom": "Browser displays 'Your connection is not private' (SSL_ERROR_BAD_CERT_DOMAIN or CERT_HAS_EXPIRED).",
+  "initial_observations": [
+    "HTTP works or redirects to HTTPS.",
+    "HTTPS handshake fails with certificate validation error."
+  ],
+  "environment": "AWS ACM certificate attached to ALB or CloudFront distribution.",
+  "has_runbook": false,
+  "has_demo": false,
+  "tags": [
+    "tls",
+    "ssl",
+    "acm",
+    "cloudfront",
+    "certificates"
+  ],
+  "possible_causes": [
+    {
+      "cause": "ACM certificate was requested in wrong region (CloudFront requires us-east-1)",
+      "likelihood": "common",
+      "evidence_needed": "CloudFront distribution cannot attach certificate created in eu-west-1.",
+      "remediation": "Request ACM certificate specifically in us-east-1 for CloudFront distributions."
+    },
+    {
+      "cause": "Certificate domain list does not include the accessed subdomain (e.g. www missing)",
+      "likelihood": "common",
+      "evidence_needed": "openssl s_client shows Subject Alternative Names missing visited domain.",
+      "remediation": "Request new certificate with Subject Alternative Names covering both domain.com and *.domain.com."
+    }
+  ],
+  "investigation_steps": [
+    {
+      "order": 1,
+      "title": "Inspect Live SSL Certificate Chain",
+      "command": "openssl s_client -connect mydomain.com:443 -servername mydomain.com < /dev/null 2>/dev/null | openssl x509 -noout -text",
+      "explanation": "Examine validity dates, issuer, and Subject Alternative Names (SAN).",
+      "what_to_look_for": "Validity Not After date and X509v3 Subject Alternative Name list."
+    }
+  ],
+  "verification": "curl -Iv https://mydomain.com reports successful TLS handshake and valid certificate.",
+  "prevention": [
+    "Use AWS ACM managed DNS validation for automatic certificate renewals."
+  ],
+  "references": [
+    "https://docs.aws.amazon.com/acm/latest/userguide/troubleshooting.html"
+  ]
+}
