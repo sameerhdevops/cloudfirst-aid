@@ -17,12 +17,12 @@ It teaches and demonstrates how an engineer investigates an operational issue, c
 
 ## What Actually Works
 
-- **30 Verified Scenarios:** Structured incident catalog across 6 categories (EC2, Linux, VPC Networking, Application, IAM/S3, Monitoring).
-- **14 Field Runbooks:** Detailed troubleshooting guides covering diagnostic logic, command explanations, root-cause differentiation, remediation, verification, and interview questions.
-- **Deterministic Diagnostic Engine:** Evaluates structured evidence fixtures against diagnostic rules to derive findings (`OBSERVED`, `SUPPORTED`, `CONFIRMED`) without guesswork.
+- **30 Troubleshooting Scenarios:** Structured incident catalog across 6 categories (EC2, Linux, VPC Networking, Application, IAM/S3, Monitoring).
+- **14 Detailed Runbooks:** Detailed troubleshooting guides covering diagnostic logic, command explanations, root-cause differentiation, remediation, verification, and interview questions.
+- **Deterministic Diagnostic Engine:** Evaluates structured evidence fixtures against diagnostic rules to derive findings (`OBSERVED`, `SUPPORTED`, `CONFIRMED`) with deterministic rules whose conclusions depend on the supplied evidence.
 - **Incident Report Generator:** Compiles scenarios, evidence items, and findings into structured Markdown post-mortem incident reports.
-- **Automated Quality Gates:** Full unit test suite (46 tests passing), Ruff static linting, and multi-version Python CI (3.10 - 3.14).
-- **Zero Cloud Charges:** Works offline by default without requiring AWS credentials, credit cards, or cloud billing, with optional live AWS read-only inspection.
+- **Automated Quality Gates:** Full unit test suite (52 tests passing), Ruff static linting, and multi-version Python CI (3.10 - 3.14).
+- **Local-First Workflow:** Scenario browsing, fixture-based triage, and tests run without deployed AWS resources or AWS credentials. Optional live EC2 inspection uses read-only AWS APIs and requires your own AWS configuration.
 
 ---
 
@@ -228,7 +228,7 @@ Read our full [Evidence Policy](docs/evidence-policy.md) and [Boundaries & Limit
 
 ## Running the Automated Test Suite
 
-CloudFirst Aid is backed by 46 unit tests verifying catalog integrity, CLI commands, diagnostic rules, report formatting, and secret redaction.
+CloudFirst Aid is backed by 52 unit tests verifying catalog integrity, CLI commands, diagnostic rules, report formatting, and secret redaction.
 
 ```bash
 # Run test suite:

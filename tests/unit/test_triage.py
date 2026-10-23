@@ -209,6 +209,7 @@ def test_triage_s3_string_equals_evaluation() -> None:
                 "Effect": "Deny",
                 "Principal": "*",
                 "Action": "s3:*",
+                "Resource": "arn:aws:s3:::test-bucket/*",
                 "Condition": {
                     "StringEquals": {"aws:sourceVpce": "vpce-badendpoint"}
                 },
@@ -218,7 +219,7 @@ def test_triage_s3_string_equals_evaluation() -> None:
 
     # Case A: Caller matched the denied endpoint
     evidence_match = [
-        EvidenceItem("E1", "CFA-020", "Error", "aws s3 cp", "AccessDenied", "simulated"),
+        EvidenceItem("E1", "CFA-020", "Error", "aws s3 cp s3://test-bucket/object.txt .", "AccessDenied when calling GetObject", "simulated"),
         EvidenceItem("E2", "CFA-020", "Policy", "aws s3api get-bucket-policy", policy_json, "simulated"),
         EvidenceItem("E3", "CFA-020", "Origin", "ec2-metadata", "Caller routed through vpce-badendpoint", "simulated"),
     ]
@@ -246,6 +247,7 @@ def test_triage_s3_secure_transport_evaluation() -> None:
                 "Effect": "Deny",
                 "Principal": "*",
                 "Action": "s3:*",
+                "Resource": "arn:aws:s3:::bucket/*",
                 "Condition": {
                     "Bool": {"aws:SecureTransport": "false"}
                 },
@@ -255,7 +257,7 @@ def test_triage_s3_secure_transport_evaluation() -> None:
 
     # HTTP caller -> CONFIRMED
     evidence_http = [
-        EvidenceItem("E1", "CFA-020", "Error", "curl http://bucket.s3.amazonaws.com", "AccessDenied", "simulated"),
+        EvidenceItem("E1", "CFA-020", "Error", "curl http://bucket.s3.amazonaws.com/object.txt", "AccessDenied when calling GetObject", "simulated"),
         EvidenceItem("E2", "CFA-020", "Policy", "aws s3api get-bucket-policy", policy_json, "simulated"),
     ]
     findings_http = triage_scenario("CFA-020", evidence_http)
@@ -263,7 +265,7 @@ def test_triage_s3_secure_transport_evaluation() -> None:
 
     # HTTPS caller -> OBSERVED (TLS used, so SecureTransport deny was not triggered)
     evidence_https = [
-        EvidenceItem("E1", "CFA-020", "Error", "curl https://bucket.s3.amazonaws.com", "AccessDenied", "simulated"),
+        EvidenceItem("E1", "CFA-020", "Error", "curl https://bucket.s3.amazonaws.com/object.txt", "AccessDenied when calling GetObject", "simulated"),
         EvidenceItem("E2", "CFA-020", "Policy", "aws s3api get-bucket-policy", policy_json, "simulated"),
     ]
     findings_https = triage_scenario("CFA-020", evidence_https)
@@ -280,7 +282,7 @@ def test_triage_alb_dynamic_ports_and_source_sg() -> None:
     )
     # Ingress rule allowing 8080 from ALB SG, but target is 9000
     sg_rules_wrong_port = (
-        'SecurityGroupRules: [{"FromPort": 8080, "ToPort": 8080, "IpProtocol": "tcp", '
+        'SecurityGroupRules: [{"GroupId": "sg-app456", "IsEgress": false, "FromPort": 8080, "ToPort": 8080, "IpProtocol": "tcp", '
         '"ReferencedGroupId": "sg-alb123", "GroupId": "sg-app456"}]'
     )
 
@@ -301,3 +303,138 @@ def test_triage_alb_order_independence() -> None:
     assert [f.description for f in findings_forward] == [f.description for f in findings_reversed]
     assert [f.status for f in findings_forward] == [f.status for f in findings_reversed]
 
+
+
+def test_triage_s3_deny_does_not_match_different_action_or_resource() -> None:
+    """A Deny for another S3 action and resource must not be reported as the cause."""
+    from cloudfirst_aid.models import EvidenceItem
+
+    policy = json.dumps({"Statement": [{
+        "Sid": "DenyWritesElsewhere",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:PutObject",
+        "Resource": "arn:aws:s3:::different-bucket/*",
+        "Condition": {"StringNotEquals": {"aws:sourceVpce": "vpce-required123"}},
+    }]})
+    evidence = [
+        EvidenceItem("E1", "CFA-020", "S3 failure", "aws s3 cp s3://test-bucket/object.txt .",
+                     "AccessDenied when calling GetObject", "simulated"),
+        EvidenceItem("E2", "CFA-020", "Bucket policy", "aws s3api get-bucket-policy", policy, "simulated"),
+        EvidenceItem("E3", "CFA-020", "Caller origin", "caller diagnostics",
+                     "Caller is operating from an external developer workstation with no attached VPC endpoint interface.",
+                     "simulated"),
+    ]
+    findings = triage_scenario("CFA-020", evidence)
+    assert not any(f.status == FindingStatus.CONFIRMED.value and "explicitly denies the observed s3 request" in f.description.lower() for f in findings)
+
+
+def test_triage_s3_deny_for_put_object_does_not_match_get_object() -> None:
+    """A PutObject Deny must not be diagnosed as the cause of a GetObject failure."""
+    from cloudfirst_aid.models import EvidenceItem
+
+    policy = json.dumps({"Statement": [{
+        "Sid": "DenyWrites",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:PutObject",
+        "Resource": "arn:aws:s3:::test-bucket/*",
+    }]})
+    evidence = [
+        EvidenceItem("E1", "CFA-020", "S3 failure", "aws s3 cp s3://test-bucket/object.txt .",
+                     "AccessDenied when calling GetObject", "simulated"),
+        EvidenceItem("E2", "CFA-020", "Bucket policy", "aws s3api get-bucket-policy", policy, "simulated"),
+    ]
+    findings = triage_scenario("CFA-020", evidence)
+    assert not any(f.status == FindingStatus.CONFIRMED.value and "explicitly denies the observed s3 request" in f.description.lower() for f in findings)
+
+
+def test_triage_s3_deny_for_another_resource_does_not_match() -> None:
+    """A Deny for another bucket must not be assigned to this request."""
+    from cloudfirst_aid.models import EvidenceItem
+
+    policy = json.dumps({"Statement": [{
+        "Sid": "DenyOtherBucket",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:GetObject",
+        "Resource": "arn:aws:s3:::different-bucket/*",
+    }]})
+    evidence = [
+        EvidenceItem("E1", "CFA-020", "S3 failure", "aws s3 cp s3://test-bucket/object.txt .",
+                     "AccessDenied when calling GetObject", "simulated"),
+        EvidenceItem("E2", "CFA-020", "Bucket policy", "aws s3api get-bucket-policy", policy, "simulated"),
+    ]
+    findings = triage_scenario("CFA-020", evidence)
+    assert not any(f.status == FindingStatus.CONFIRMED.value and "explicitly denies the observed s3 request" in f.description.lower() for f in findings)
+
+
+def test_triage_s3_deny_for_another_principal_does_not_match() -> None:
+    """A principal-specific Deny must not be attributed to a different caller role."""
+    from cloudfirst_aid.models import EvidenceItem
+
+    policy = json.dumps({"Statement": [{
+        "Sid": "DenyOtherRole",
+        "Effect": "Deny",
+        "Principal": {"AWS": "arn:aws:iam::111122223333:role/restricted-role"},
+        "Action": "s3:GetObject",
+        "Resource": "arn:aws:s3:::test-bucket/*",
+    }]})
+    evidence = [
+        EvidenceItem("E1", "CFA-020", "S3 failure", "aws s3 cp s3://test-bucket/object.txt .",
+                     "AccessDenied when calling GetObject for arn:aws:iam::111122223333:role/application-role", "simulated"),
+        EvidenceItem("E2", "CFA-020", "Bucket policy", "aws s3api get-bucket-policy", policy, "simulated"),
+    ]
+    findings = triage_scenario("CFA-020", evidence)
+    assert not any(f.status == FindingStatus.CONFIRMED.value and "explicitly denies the observed s3 request" in f.description.lower() for f in findings)
+
+
+def test_triage_alb_incomplete_security_group_evidence_is_inconclusive() -> None:
+    """An excerpt missing IsEgress/completeness metadata cannot prove a rule is absent."""
+    from cloudfirst_aid.models import EvidenceItem
+
+    health = (
+        '{"TargetHealthDescriptions":[{"Target":{"Id":"i-12345","Port":9000},'
+        '"TargetHealth":{"State":"unhealthy","Reason":"Target.Timeout"}}]}'
+    )
+    partial_rules = (
+        'SecurityGroupRules: [{"GroupId":"sg-app456","FromPort":8080,'
+        '"ToPort":8080,"IpProtocol":"tcp","ReferencedGroupId":"sg-alb123"}]'
+    )
+    evidence = [
+        EvidenceItem("E1", "CFA-017", "Target health", "aws elbv2 describe-target-health", health, "simulated"),
+        EvidenceItem("E2", "CFA-017", "Partial SG rules", "aws ec2 describe-security-group-rules", partial_rules, "simulated"),
+    ]
+    findings = triage_scenario("CFA-017", evidence)
+    assert any(f.status == FindingStatus.NEEDS_INVESTIGATION.value and "incomplete" in f.description.lower() for f in findings)
+    assert not any(f.status == FindingStatus.CONFIRMED.value and "no observed ingress rule" in f.description.lower() for f in findings)
+
+
+def test_triage_alb_does_not_treat_unrelated_group_as_alb_source() -> None:
+    """A port rule from a different group is not proof that the ALB can reach the target."""
+    from cloudfirst_aid.models import EvidenceItem
+
+    health = (
+        '{"TargetHealthDescriptions":[{"Target":{"Id":"i-12345","Port":9000},'
+        '"TargetHealth":{"State":"unhealthy","Reason":"Target.Timeout"}}]}'
+    )
+    alb = '{"LoadBalancers":[{"SecurityGroups":["sg-a1b123"]}]}'
+    rules = (
+        'SecurityGroupRules: [{"GroupId":"sg-c4d456","IsEgress":false,'
+        '"FromPort":9000,"ToPort":9000,"IpProtocol":"tcp",'
+        '"ReferencedGroupId":"sg-e7f999"}]'
+    )
+    evidence = [
+        EvidenceItem("E1", "CFA-017", "Target health", "aws elbv2 describe-target-health", health, "simulated"),
+        EvidenceItem("E2", "CFA-017", "Load balancer", "aws elbv2 describe-load-balancers", alb, "simulated"),
+        EvidenceItem("E3", "CFA-017", "Target SG rules", "aws ec2 describe-security-group-rules", rules, "simulated"),
+    ]
+    findings = triage_scenario("CFA-017", evidence)
+    assert any(
+        f.status == FindingStatus.CONFIRMED.value
+        and "do not reference the identified alb security group" in f.description.lower()
+        for f in findings
+    )
+    assert [f.description for f in triage_scenario("CFA-017", evidence)] == [
+        f.description for f in triage_scenario("CFA-017", list(reversed(evidence)))
+    ]

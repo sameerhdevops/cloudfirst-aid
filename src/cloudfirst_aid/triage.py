@@ -10,6 +10,7 @@ rules are deterministic: the same evidence always produces the same findings.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
 from typing import Any
@@ -429,466 +430,723 @@ def _triage_service_failure(evidence: list[EvidenceItem]) -> list[Finding]:
     return findings
 
 
-def _triage_alb_unhealthy(evidence: list[EvidenceItem]) -> list[Finding]:
-    """CFA-017: ALB unhealthy targets / HTTP 502.
+def _extract_json_payload(text: str) -> Any | None:
+    """Extract the first complete JSON object or array from command output."""
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char not in "[{":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, (dict, list)):
+            return payload
+    return None
 
-    Performs two-phase diagnostic evaluation to ensure strict order independence:
-    1. Extracts target ports, ALB SG identifiers, and target health reason codes from all evidence.
-    2. Evaluates target security group rules against the verified target ports and load balancer origin.
+
+def _policy_values(value: Any) -> list[str]:
+    """Normalize policy values that may be strings or arrays."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list) and all(isinstance(entry, str) for entry in value):
+        return value
+    return []
+
+
+def _matches_policy_value(actual: str, patterns: list[str], *, case_sensitive: bool = True) -> bool:
+    """Match IAM-style wildcard values without treating arbitrary text as a match."""
+    if not case_sensitive:
+        actual = actual.lower()
+        patterns = [pattern.lower() for pattern in patterns]
+    return any(fnmatch.fnmatchcase(actual, pattern) for pattern in patterns)
+
+
+def _extract_s3_request_context(evidence: list[EvidenceItem]) -> dict[str, Any]:
+    """Collect only request details supported by non-policy evidence."""
+    context: dict[str, Any] = {
+        "action": None,
+        "resource": None,
+        "principal": None,
+        "source_vpce": None,
+        "external": False,
+        "secure_transport": None,
+        "context_evidence_ids": [],
+    }
+
+    for item in evidence:
+        source = item.source or ""
+        description = item.description or ""
+        observation = item.observation or ""
+        combined = f"{source} {description} {observation}"
+        combined_lower = combined.lower()
+        is_policy = (
+            "get-bucket-policy" in source.lower()
+            or "bucket-policy" in source.lower()
+            or "bucket policy" in description.lower()
+        )
+        if is_policy:
+            continue
+
+        context["context_evidence_ids"].append(item.id)
+
+        if re.search(r"\bgetobject\b|calling the get-object operation", combined_lower):
+            context["action"] = "s3:GetObject"
+        elif re.search(r"\bputobject\b|calling the put-object operation", combined_lower):
+            context["action"] = "s3:PutObject"
+        elif re.search(r"\bdeleteobject\b|calling the delete-object operation", combined_lower):
+            context["action"] = "s3:DeleteObject"
+        elif re.search(r"\blistobjects(?:v2)?\b", combined_lower):
+            context["action"] = "s3:ListBucket"
+
+        s3_uri = re.search(r"s3://([^/\s?#]+)(?:/([^\s?#]+))?", combined, re.IGNORECASE)
+        virtual_host_url = re.search(
+            r"https?://([a-z0-9.-]+)\.s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com(?:/([^\s?#]*))?",
+            combined,
+            re.IGNORECASE,
+        )
+        if s3_uri:
+            bucket, key = s3_uri.groups()
+            context["resource"] = f"arn:aws:s3:::{bucket}" + (f"/{key}" if key else "")
+            if key and not context["action"] and "aws s3 cp" in source.lower():
+                context["action"] = "s3:GetObject"
+        elif virtual_host_url:
+            bucket, key = virtual_host_url.groups()
+            context["resource"] = f"arn:aws:s3:::{bucket}" + (f"/{key}" if key else "")
+            if key and not context["action"] and source.lower().startswith(("curl ", "wget ")):
+                context["action"] = "s3:GetObject"
+
+        principal_match = re.search(
+            r"\barn:aws(?:-[a-z]+)?:iam::\d{12}:(?:user|role|assumed-role)/[^\s,\"']+",
+            combined,
+            re.IGNORECASE,
+        )
+        if principal_match:
+            context["principal"] = principal_match.group(0)
+
+        # Only use endpoint IDs from evidence describing the caller, not policy text
+        # or a limitations note that merely repeats the endpoint required by a policy.
+        if re.search(r"\bcaller\b.*\b(?:through|via|from|using|originat\w*)\b", observation, re.IGNORECASE):
+            vpce_match = re.search(r"\bvpce-[0-9a-z]+\b", observation, re.IGNORECASE)
+            if vpce_match:
+                context["source_vpce"] = vpce_match.group(0).lower()
+
+        if any(
+            phrase in observation.lower()
+            for phrase in (
+                "external developer workstation",
+                "direct internet routing",
+                "no attached vpc endpoint",
+                "external network",
+            )
+        ):
+            context["external"] = True
+            if "no attached vpc endpoint" in observation.lower():
+                context["source_vpce"] = ""
+
+        transport_text = f"{source} {observation}".lower()
+        if "http://" in transport_text or "transport: http" in transport_text:
+            context["secure_transport"] = False
+        elif "https://" in transport_text or "transport: https" in transport_text:
+            context["secure_transport"] = True
+
+    return context
+
+
+def _principal_matches(statement: dict[str, Any], context: dict[str, Any]) -> bool | None:
+    """Check the supported Principal and NotPrincipal forms."""
+    principal = context.get("principal")
+    if "Principal" in statement:
+        value = statement["Principal"]
+        if value == "*":
+            return True
+        if isinstance(value, dict):
+            patterns = _policy_values(value.get("AWS"))
+            if "*" in patterns:
+                return True
+            if principal is None or not patterns:
+                return None
+            return _matches_policy_value(principal, patterns)
+        if isinstance(value, str):
+            if value == "*":
+                return True
+            if principal is None:
+                return None
+            return _matches_policy_value(principal, [value])
+
+    if "NotPrincipal" in statement:
+        value = statement["NotPrincipal"]
+        if value == "*":
+            return False
+        patterns: list[str] = []
+        if isinstance(value, str):
+            patterns = [value]
+        elif isinstance(value, dict):
+            patterns = _policy_values(value.get("AWS"))
+        if principal is None or not patterns:
+            return None
+        return not _matches_policy_value(principal, patterns)
+
+    return None
+
+
+def _evaluate_s3_deny_statement(
+    statement: dict[str, Any], context: dict[str, Any]
+) -> tuple[bool | None, str]:
+    """Evaluate a limited subset of bucket-policy applicability.
+
+    This is not a complete IAM policy evaluator. Unsupported condition keys or
+    operators produce an inconclusive result rather than a confirmed diagnosis.
     """
-    findings: list[Finding] = []
+    action = context.get("action")
+    if "Action" in statement:
+        patterns = _policy_values(statement["Action"])
+        if action is None or not patterns:
+            return None, "The request action is not established by the evidence."
+        action_match = _matches_policy_value(action, patterns, case_sensitive=False)
+    elif "NotAction" in statement:
+        patterns = _policy_values(statement["NotAction"])
+        if action is None or not patterns:
+            return None, "The request action is not established for the NotAction statement."
+        action_match = not _matches_policy_value(action, patterns, case_sensitive=False)
+    else:
+        return None, "The statement does not provide a supported Action or NotAction field."
 
+    if not action_match:
+        return False, "The Deny statement does not cover the observed S3 action."
+
+    resource = context.get("resource")
+    if "Resource" in statement:
+        patterns = _policy_values(statement["Resource"])
+        if resource is None or not patterns:
+            return None, "The request resource is not established by the evidence."
+        resource_match = _matches_policy_value(resource, patterns)
+    elif "NotResource" in statement:
+        patterns = _policy_values(statement["NotResource"])
+        if resource is None or not patterns:
+            return None, "The request resource is not established for the NotResource statement."
+        resource_match = not _matches_policy_value(resource, patterns)
+    else:
+        return None, "The statement does not provide a supported Resource or NotResource field."
+
+    if not resource_match:
+        return False, "The Deny statement does not cover the observed S3 resource."
+
+    principal_match = _principal_matches(statement, context)
+    if principal_match is False:
+        return False, "The statement's Principal does not match the available caller identity."
+    if principal_match is None:
+        return None, "The caller identity cannot be matched to this statement's Principal."
+
+    condition = statement.get("Condition", {})
+    if not condition:
+        return True, "The available action, resource, and principal evidence matches an unconditional Deny."
+
+    if not isinstance(condition, dict):
+        return None, "The statement's Condition field is not a supported policy object."
+
+    unknown_condition = False
+    for operator, operands in condition.items():
+        if not isinstance(operands, dict):
+            return None, f"Unsupported condition structure for operator {operator}."
+        op_lower = operator.lower()
+
+        for key, expected_raw in operands.items():
+            key_lower = key.lower()
+            expected_values = [str(value).lower() for value in _policy_values(expected_raw)]
+            if not expected_values:
+                return None, f"Unsupported condition value for {key}."
+
+            if key_lower == "aws:sourcevpce":
+                actual = context.get("source_vpce")
+                if actual is None:
+                    unknown_condition = True
+                    continue
+                if op_lower == "stringequals":
+                    matched = actual.lower() in expected_values
+                elif op_lower == "stringnotequals":
+                    matched = actual.lower() not in expected_values
+                else:
+                    return None, f"Unsupported operator {operator} for aws:SourceVpce."
+                if not matched:
+                    return False, "The aws:SourceVpce condition does not match the observed caller context."
+
+            elif key_lower == "aws:securetransport":
+                actual_secure = context.get("secure_transport")
+                if actual_secure is None:
+                    unknown_condition = True
+                    continue
+                if op_lower != "bool":
+                    return None, f"Unsupported operator {operator} for aws:SecureTransport."
+                expected_bools = {value in {"true", "1"} for value in expected_values}
+                if actual_secure not in expected_bools:
+                    return False, "The aws:SecureTransport condition does not match the observed transport."
+
+            else:
+                return None, f"Condition key {key} is outside the supported evaluator scope."
+
+    if unknown_condition:
+        return None, "One or more condition values cannot be established from the available request evidence."
+    return True, "The supported condition values match the observed request context."
+
+
+def _parse_security_group_snapshot(
+    item: EvidenceItem,
+) -> tuple[bool, set[str], list[dict[str, Any]]]:
+    """Parse supported AWS security-group response shapes.
+
+    Arbitrary or partial text must not be used to confirm that a rule is absent.
+    """
+    payload = _extract_json_payload(item.observation or "")
+    if payload is None:
+        return False, set(), []
+
+    groups: set[str] = set()
+    rules: list[dict[str, Any]] = []
+
+    if isinstance(payload, dict) and isinstance(payload.get("SecurityGroups"), list):
+        payload = payload["SecurityGroups"]
+    if isinstance(payload, dict) and "SecurityGroupRules" in payload:
+        payload = payload["SecurityGroupRules"]
+    if isinstance(payload, dict):
+        payload = [payload]
+
+    if not isinstance(payload, list) or not payload or not all(isinstance(row, dict) for row in payload):
+        return False, set(), []
+
+    # describe-security-groups response: each group has an IpPermissions list.
+    if all("GroupId" in row and isinstance(row.get("IpPermissions"), list) for row in payload):
+        for group in payload:
+            group_id = str(group["GroupId"]).lower()
+            groups.add(group_id)
+            for permission in group["IpPermissions"]:
+                if not isinstance(permission, dict) or "IpProtocol" not in permission:
+                    return False, groups, rules
+                source_groups = {
+                    str(pair["GroupId"]).lower()
+                    for pair in permission.get("UserIdGroupPairs", [])
+                    if isinstance(pair, dict) and pair.get("GroupId")
+                }
+                if permission.get("ReferencedGroupId"):
+                    source_groups.add(str(permission["ReferencedGroupId"]).lower())
+                cidrs: list[str] = []
+                for key in ("IpRanges", "Ipv6Ranges", "PrefixListIds"):
+                    for source in permission.get(key, []):
+                        if isinstance(source, dict):
+                            cidr = source.get("CidrIp") or source.get("CidrIpv6") or source.get("PrefixListId")
+                            if cidr:
+                                cidrs.append(str(cidr))
+                if not source_groups and not cidrs:
+                    return False, groups, rules
+                protocol = str(permission["IpProtocol"])
+                if protocol == "-1":
+                    from_port, to_port = 0, 65535
+                else:
+                    try:
+                        from_port = int(permission["FromPort"])
+                        to_port = int(permission["ToPort"])
+                    except (KeyError, TypeError, ValueError):
+                        return False, groups, rules
+                rules.append({
+                    "group_id": group_id,
+                    "from_port": from_port,
+                    "to_port": to_port,
+                    "protocol": protocol,
+                    "source_groups": source_groups,
+                    "cidrs": cidrs,
+                })
+        return True, groups, rules
+
+    # describe-security-group-rules response: IsEgress and target GroupId are needed.
+    if all("GroupId" in row and "IsEgress" in row and "IpProtocol" in row for row in payload):
+        for row in payload:
+            group_id = str(row["GroupId"]).lower()
+            groups.add(group_id)
+            if row.get("IsEgress") is True:
+                continue
+            source_groups: set[str] = set()
+            if row.get("ReferencedGroupId"):
+                source_groups.add(str(row["ReferencedGroupId"]).lower())
+            info = row.get("ReferencedGroupInfo")
+            if isinstance(info, dict) and info.get("GroupId"):
+                source_groups.add(str(info["GroupId"]).lower())
+            cidrs = [
+                str(row[key]) for key in ("CidrIpv4", "CidrIpv6", "PrefixListId") if row.get(key)
+            ]
+            if not source_groups and not cidrs:
+                return False, groups, rules
+            protocol = str(row["IpProtocol"])
+            if protocol == "-1":
+                from_port, to_port = 0, 65535
+            else:
+                try:
+                    from_port = int(row["FromPort"])
+                    to_port = int(row["ToPort"])
+                except (KeyError, TypeError, ValueError):
+                    return False, groups, rules
+            rules.append({
+                "group_id": group_id,
+                "from_port": from_port,
+                "to_port": to_port,
+                "protocol": protocol,
+                "source_groups": source_groups,
+                "cidrs": cidrs,
+            })
+        return True, groups, rules
+
+    return False, groups, rules
+
+
+def _triage_alb_unhealthy(evidence: list[EvidenceItem]) -> list[Finding]:
+    """Evaluate ALB target health and security-group evidence conservatively."""
+    findings: list[Finding] = []
     target_ports: set[int] = set()
+    health_items: list[EvidenceItem] = []
+    security_group_items: list[EvidenceItem] = []
+    alb_security_groups: set[str] = set()
     has_unhealthy_targets = False
     has_healthy_targets = False
-    alb_sg_ids: set[str] = set()
-    sg_evidence_items: list[EvidenceItem] = []
-    health_evidence_items: list[EvidenceItem] = []
-    observed_502 = False
     reason_timeout = False
-    reason_mismatch = None
     reason_refused = False
+    reason_mismatch: str | None = None
+    observed_502_items: list[EvidenceItem] = []
 
-    # Phase 1: Context extraction across all evidence items
+    # Collect context first so results do not depend on evidence order.
     for item in evidence:
-        obs = item.observation
-        obs_lower = obs.lower()
-        combined = f"{item.source} {item.description} {obs}".lower()
+        source_lower = (item.source or "").lower()
+        description_lower = (item.description or "").lower()
+        observation = item.observation or ""
+        obs_lower = observation.lower()
+        combined_lower = f"{source_lower} {description_lower} {obs_lower}"
 
-        # Track target health
-        if "targethealthdescriptions" in obs_lower or "targethealth" in obs_lower:
-            health_evidence_items.append(item)
-            if "unhealthy" in obs_lower or "failed" in obs_lower:
+        if "describe-load-balancers" in source_lower:
+            for group_id in re.findall(r"\bsg-[0-9a-f]+\b", observation, re.IGNORECASE):
+                alb_security_groups.add(group_id.lower())
+
+        if "describe-target-health" in source_lower or "targethealthdescriptions" in obs_lower:
+            health_items.append(item)
+            target_ports.update(
+                int(port_text)
+                for port_text in re.findall(r'"Port"\s*:\s*(\d+)', observation, re.IGNORECASE)
+            )
+            if (
+                re.search(r'"State"\s*:\s*"unhealthy"', obs_lower)
+                or "target.timeout" in obs_lower
+                or "target.responsecodemismatch" in obs_lower
+                or "target.failedconnection" in obs_lower
+            ):
                 has_unhealthy_targets = True
-            elif "healthy" in obs_lower:
+            if re.search(r'"State"\s*:\s*"healthy"', obs_lower):
                 has_healthy_targets = True
-
-            # Extract target port dynamically from TargetHealthDescriptions
-            for pm in re.findall(r'"Port":\s*(\d+)', obs):
-                target_ports.add(int(pm))
-
-            # Reason codes
-            if "target.timeout" in obs_lower:
-                reason_timeout = True
+            reason_timeout = reason_timeout or "target.timeout" in obs_lower
+            reason_refused = reason_refused or "target.failedconnection" in obs_lower or "connection refused" in obs_lower
             if "target.responsecodemismatch" in obs_lower:
-                code_match = re.search(r"codes:\s*\[(\d+)\]", obs)
+                code_match = re.search(r"codes:\s*\[(\d+)\]", observation, re.IGNORECASE)
                 reason_mismatch = f"HTTP {code_match.group(1)}" if code_match else "unexpected HTTP code"
-            if "target.failedconnection" in obs_lower or "connection refused" in obs_lower:
-                reason_refused = True
 
-        # Track ALB SG from describe-load-balancers or references
-        if "describe-load-balancers" in combined or "loadbalancer" in combined or "alb" in combined:
-            for sg_match in re.findall(r"\b(sg-[0-9a-fA-F]+)\b", obs):
-                if "target" not in sg_match.lower():
-                    alb_sg_ids.add(sg_match.lower())
-
-        # Track Security Group evidence
         if (
-            "describe-security-groups" in combined
-            or "describe-security-group" in combined
-            or "security group" in combined
-            or "security-group" in combined
-            or "securitygrouprules" in obs_lower
+            "describe-security-groups" in source_lower
+            or "describe-security-group-rules" in source_lower
+            or "security-group-rules" in combined_lower
         ):
-            sg_evidence_items.append(item)
+            security_group_items.append(item)
 
-        # Track 502/503 HTTP errors
-        if "502" in obs and ("bad gateway" in obs_lower or "http/1.1 502" in obs_lower):
-            observed_502 = True
+        if "502" in observation and ("bad gateway" in obs_lower or "http/1.1 502" in obs_lower):
+            observed_502_items.append(item)
 
-    # Phase 2: Formulate findings
-    if observed_502:
+    if observed_502_items:
         findings.append(Finding(
             description="Load balancer returned HTTP 502 Bad Gateway to clients.",
             status=FindingStatus.OBSERVED.value,
-            evidence_ids=[item.id for item in evidence if "502" in item.observation and "bad gateway" in item.observation.lower()],
-            explanation="The load balancer returned 502 because all registered targets were unavailable or uncontactable.",
+            evidence_ids=[item.id for item in observed_502_items],
+            explanation=(
+                "The load balancer returned HTTP 502. The response alone does not establish "
+                "whether the cause is target availability, connection handling, or an invalid response."
+            ),
         ))
 
     if has_unhealthy_targets:
         findings.append(Finding(
             description="Application Load Balancer target group reports targets as Unhealthy.",
             status=FindingStatus.CONFIRMED.value,
-            evidence_ids=[item.id for item in health_evidence_items],
-            explanation=(
-                "Target group health checks are failing. The load balancer cannot route "
-                "client traffic to unhealthy backend instances."
-            ),
+            evidence_ids=[item.id for item in health_items],
+            explanation="The supplied target-health output reports failed health checks; it does not by itself prove the underlying cause.",
         ))
-
         if reason_timeout:
             findings.append(Finding(
                 description="Health check probe failed with reason: Target.Timeout.",
                 status=FindingStatus.SUPPORTED.value,
-                evidence_ids=[item.id for item in health_evidence_items],
-                explanation=(
-                    "Target.Timeout indicates the health check probe received no response before "
-                    "the configured timeout. Common causes include Security Group drops or routing."
-                ),
+                evidence_ids=[item.id for item in health_items],
+                explanation="The probe timed out. Check the target service, port, security groups, routing, and configured timeout.",
             ))
         if reason_mismatch:
             findings.append(Finding(
                 description=f"Health check probe failed with reason: Target.ResponseCodeMismatch ({reason_mismatch}).",
                 status=FindingStatus.SUPPORTED.value,
-                evidence_ids=[item.id for item in health_evidence_items],
-                explanation=(
-                    f"Target returned {reason_mismatch}, which does not match the configured "
-                    "target group HTTP status matcher (default 200)."
-                ),
+                evidence_ids=[item.id for item in health_items],
+                explanation=f"The target returned {reason_mismatch}; compare it with the target group's configured health-check matcher.",
             ))
         if reason_refused:
             findings.append(Finding(
                 description="Health check probe failed with reason: Target.FailedConnection.",
                 status=FindingStatus.SUPPORTED.value,
-                evidence_ids=[item.id for item in health_evidence_items],
-                explanation="Connection to target was refused; the backend process is not listening on that port.",
+                evidence_ids=[item.id for item in health_items],
+                explanation="The connection attempt was refused. Check the listening process, bind address, and target port.",
             ))
     elif has_healthy_targets:
         findings.append(Finding(
-            description="Registered targets are reporting Healthy state.",
+            description="Target-health evidence reports Healthy targets.",
             status=FindingStatus.OBSERVED.value,
-            evidence_ids=[item.id for item in health_evidence_items],
-            explanation="Target group health checks are succeeding for all registered instances.",
+            evidence_ids=[item.id for item in health_items],
+            explanation="The supplied health-check output reports healthy targets; it does not prove every application path is working.",
         ))
 
-    # Evaluate Security Group rules against target ports
-    if sg_evidence_items:
+    if security_group_items:
+        snapshots = [_parse_security_group_snapshot(item) for item in security_group_items]
+        snapshot_complete = all(complete for complete, _, _ in snapshots)
+        target_group_ids = set().union(*(groups for _, groups, _ in snapshots))
+        all_rules = [rule for _, _, rules in snapshots for rule in rules]
+
         if not target_ports:
             findings.append(Finding(
-                description="Target application port is unknown from available evidence; cannot verify Security Group ingress rules.",
+                description="Target application port is unknown; Security Group ingress cannot be evaluated.",
                 status=FindingStatus.NEEDS_INVESTIGATION.value,
-                evidence_ids=[item.id for item in sg_evidence_items],
-                explanation=(
-                    "Security group rules were provided, but the target group port was not found in evidence. "
-                    "Collect 'aws elbv2 describe-target-health' to establish the target port."
-                ),
+                evidence_ids=[item.id for item in security_group_items],
+                explanation="Collect structured describe-target-health output to establish the target port.",
+            ))
+        elif not snapshot_complete or not target_group_ids:
+            findings.append(Finding(
+                description="Security Group evidence is incomplete; ingress findings cannot be confirmed.",
+                status=FindingStatus.NEEDS_INVESTIGATION.value,
+                evidence_ids=[item.id for item in security_group_items],
+                explanation="Provide a complete structured Security Group response, including target GroupId and ingress rules.",
             ))
         else:
-            for p in sorted(target_ports):
-                port_authorized = False
-                has_any_port_rule = False
-
-                for item in sg_evidence_items:
-                    obs = item.observation
-                    obs_lower = obs.lower()
-
-                    port_rule_regex = rf'"FromPort":\s*{p}\b|\bport\s+{p}\b'
-                    if re.search(port_rule_regex, obs, re.IGNORECASE) or f'"fromport": {p}' in obs_lower:
-                        has_any_port_rule = True
-
-                        if alb_sg_ids:
-                            for alb_sg in alb_sg_ids:
-                                if alb_sg in obs_lower:
-                                    port_authorized = True
-                                    break
-                        elif (
-                            '"cidr_ip": "0.0.0.0/0"' in obs_lower
-                            or '"cidrip": "0.0.0.0/0"' in obs_lower
-                            or "0.0.0.0/0" in obs
-                            or "useridgrouppairs" in obs_lower
-                            or "groupid" in obs_lower
-                        ):
-                            port_authorized = True
-
-                if not has_any_port_rule:
+            for port in sorted(target_ports):
+                target_rules = [
+                    rule for rule in all_rules
+                    if rule["group_id"] in target_group_ids
+                    and rule["protocol"] in {"-1", "tcp"}
+                    and rule["from_port"] <= port <= rule["to_port"]
+                ]
+                if not target_rules:
                     findings.append(Finding(
-                        description=f"Target Security Group does not authorize traffic on target port {p}.",
+                        description=f"Target Security Group has no observed ingress rule covering target port {port}.",
                         status=FindingStatus.CONFIRMED.value,
-                        evidence_ids=[item.id for item in sg_evidence_items],
+                        evidence_ids=[item.id for item in security_group_items],
                         explanation=(
-                            f"Attached target security group has no ingress rule for port {p}. "
-                            "Health check probes from the ALB are dropped."
+                            f"The supplied complete ingress snapshot for the identified target group(s) "
+                            f"contains no TCP or all-protocol ingress rule covering port {port}."
                         ),
                     ))
-                elif not port_authorized and alb_sg_ids:
+                    continue
+
+                if not alb_security_groups:
                     findings.append(Finding(
-                        description=f"Target Security Group contains an ingress rule for port {p}, but source group does not match Load Balancer SG.",
-                        status=FindingStatus.CONFIRMED.value,
-                        evidence_ids=[item.id for item in sg_evidence_items],
-                        explanation=(
-                            f"Ingress rule exists for port {p}, but does not permit traffic from ALB security group "
-                            f"{', '.join(alb_sg_ids)}."
-                        ),
+                        description=f"An ingress rule covers target port {port}, but the ALB source Security Group is unknown.",
+                        status=FindingStatus.NEEDS_INVESTIGATION.value,
+                        evidence_ids=[item.id for item in security_group_items],
+                        explanation="Collect describe-load-balancers output to identify the ALB Security Group before confirming source authorization.",
+                    ))
+                    continue
+
+                group_authorized = any(
+                    rule["source_groups"].intersection(alb_security_groups)
+                    for rule in target_rules
+                )
+                cidr_source_present = any(rule["cidrs"] for rule in target_rules)
+                if group_authorized:
+                    findings.append(Finding(
+                        description=f"Target Security Group has an ingress rule covering port {port} from the ALB Security Group.",
+                        status=FindingStatus.OBSERVED.value,
+                        evidence_ids=[item.id for item in security_group_items],
+                        explanation="The supplied rule references the identified ALB Security Group. Verify the relevant target and rule are the ones in use.",
+                    ))
+                elif cidr_source_present:
+                    findings.append(Finding(
+                        description=f"An ingress rule covers target port {port}, but its CIDR source has not been checked against the ALB subnets.",
+                        status=FindingStatus.NEEDS_INVESTIGATION.value,
+                        evidence_ids=[item.id for item in security_group_items],
+                        explanation="CIDR-based access requires subnet/address context; its presence alone does not establish reachability from the ALB.",
                     ))
                 else:
                     findings.append(Finding(
-                        description=f"Target Security Group contains an ingress rule for port {p}.",
-                        status=FindingStatus.OBSERVED.value,
-                        evidence_ids=[item.id for item in sg_evidence_items],
-                        explanation=f"Ingress rule for port {p} exists in target security group.",
+                        description=f"Target Security Group rules covering port {port} do not reference the identified ALB Security Group.",
+                        status=FindingStatus.CONFIRMED.value,
+                        evidence_ids=[item.id for item in security_group_items],
+                        explanation="The supplied complete ingress rules for this port reference other Security Groups, not the identified ALB Security Group.",
                     ))
 
     if not findings:
         findings.append(Finding(
-            description="ALB target health requires investigation.",
+            description="ALB target health requires further investigation.",
             status=FindingStatus.NEEDS_INVESTIGATION.value,
-            explanation="Collect 'aws elbv2 describe-target-health' and security group rules.",
+            explanation="Collect structured target-health, load-balancer, and target Security Group output.",
         ))
-
     return findings
 
 
 def _triage_s3_access_denied(evidence: list[EvidenceItem]) -> list[Finding]:
-    """CFA-020: S3 AccessDenied / Bucket Policy triage."""
+    """Evaluate S3 AccessDenied evidence against a limited, explicit policy subset."""
     findings: list[Finding] = []
-
     access_denied_items: list[EvidenceItem] = []
     bucket_policy_items: list[EvidenceItem] = []
-    caller_context_items: list[EvidenceItem] = []
     iam_items: list[EvidenceItem] = []
     kms_items: list[EvidenceItem] = []
+    request_context = _extract_s3_request_context(evidence)
 
-    caller_vpce: str | None = None
-    caller_is_external: bool = False
-    caller_is_https: bool | None = None
-
-    # Step 1: Analyze evidence items across all sources
     for item in evidence:
-        obs = item.observation
-        obs_lower = obs.lower()
-        src_lower = item.source.lower()
-        desc_lower = item.description.lower()
-        combined = f"{src_lower} {desc_lower} {obs_lower}"
-
+        source_lower = (item.source or "").lower()
+        description_lower = (item.description or "").lower()
+        obs_lower = (item.observation or "").lower()
         if "accessdenied" in obs_lower or "access denied" in obs_lower:
             access_denied_items.append(item)
-
-        if "bucket-policy" in combined or "bucket policy" in combined or "get-bucket-policy" in src_lower:
-            bucket_policy_items.append(item)
-
-        # Detect caller network / transport context
         if (
-            "workstation" in combined
-            or "direct internet" in combined
-            or "public ip" in combined
-            or "no attached vpc endpoint" in combined
-            or "external" in combined
+            "get-bucket-policy" in source_lower
+            or "bucket-policy" in source_lower
+            or "bucket policy" in description_lower
         ):
-            caller_context_items.append(item)
-            caller_is_external = True
-            if "no attached vpc endpoint" in combined:
-                caller_vpce = ""
-
-        # Check for caller VPC endpoint in non-bucket-policy evidence
-        if "bucket-policy" not in combined and "get-bucket-policy" not in src_lower:
-            vpce_match = re.search(r"\b(vpce-[0-9a-zA-Z]+)\b", obs, re.IGNORECASE)
-            if vpce_match:
-                caller_vpce = vpce_match.group(1).lower()
-                caller_context_items.append(item)
-
-        # Check for transport scheme
-        if "http://" in src_lower or "transport: http" in combined:
-            caller_is_https = False
-            caller_context_items.append(item)
-        elif "https://" in src_lower or "transport: https" in combined or "ssl: true" in combined:
-            caller_is_https = True
-            caller_context_items.append(item)
-
+            bucket_policy_items.append(item)
         if "no identity-based policy" in obs_lower or "not authorized to perform" in obs_lower:
             iam_items.append(item)
-
         if "kms" in obs_lower and ("kms:decrypt" in obs_lower or "kms exception" in obs_lower):
             kms_items.append(item)
 
-    # Step 2: Record AccessDenied observation if observed
     if access_denied_items:
         findings.append(Finding(
             description="Amazon S3 API returned 403 AccessDenied response.",
             status=FindingStatus.OBSERVED.value,
             evidence_ids=[item.id for item in access_denied_items],
             explanation=(
-                "The S3 service rejected the request with 403 AccessDenied. Possible causes include "
-                "an explicit Deny in bucket policy or SCP, missing IAM permissions, S3 Block Public Access, "
-                "or KMS key policy restrictions."
+                "S3 rejected the request. Possible causes include bucket or identity policies, "
+                "SCPs, Block Public Access, or KMS permissions; the response alone does not identify the cause."
             ),
         ))
 
-    # Step 3: Parse and evaluate Bucket Policy statements
-    for bp_item in bucket_policy_items:
-        policy_dict = None
-        obs = bp_item.observation.strip()
-        try:
-            json_start = obs.find("{")
-            json_end = obs.rfind("}")
-            if json_start != -1 and json_end != -1 and json_end > json_start:
-                policy_dict = json.loads(obs[json_start:json_end + 1])
-        except Exception:
-            policy_dict = None
+    for policy_item in bucket_policy_items:
+        payload = _extract_json_payload(policy_item.observation or "")
+        if not isinstance(payload, dict) or "Statement" not in payload:
+            findings.append(Finding(
+                description="Bucket policy could not be parsed as complete JSON.",
+                status=FindingStatus.NEEDS_INVESTIGATION.value,
+                evidence_ids=[policy_item.id],
+                explanation="Retrieve the complete policy JSON. Text fragments are insufficient to evaluate statement applicability.",
+            ))
+            continue
 
-        if policy_dict and isinstance(policy_dict, dict) and "Statement" in policy_dict:
-            raw_stmts = policy_dict["Statement"]
-            statements = raw_stmts if isinstance(raw_stmts, list) else [raw_stmts]
-            deny_stmts = [s for s in statements if isinstance(s, dict) and s.get("Effect") == "Deny"]
+        raw_statements = payload["Statement"]
+        statements = raw_statements if isinstance(raw_statements, list) else [raw_statements]
+        deny_statements = [
+            statement for statement in statements
+            if isinstance(statement, dict) and str(statement.get("Effect", "")).lower() == "deny"
+        ]
+        if not deny_statements:
+            findings.append(Finding(
+                description="No explicit Deny statement was found in the inspected bucket policy.",
+                status=FindingStatus.OBSERVED.value,
+                evidence_ids=[policy_item.id],
+                explanation="Continue investigating identity policies, KMS permissions, SCPs, Block Public Access, and other applicable policies.",
+            ))
+            continue
 
-            if not deny_stmts:
+        matched_deny = False
+        uncertain_deny = False
+        for statement in deny_statements:
+            sid = str(statement.get("Sid", "ExplicitDeny"))
+            applies, reason = _evaluate_s3_deny_statement(statement, request_context)
+            if applies is True:
+                matched_deny = True
+                secure_transport_false = False
+                condition = statement.get("Condition", {})
+                if isinstance(condition, dict) and request_context.get("secure_transport") is False:
+                    for operator, operands in condition.items():
+                        if operator.lower() == "bool" and isinstance(operands, dict):
+                            for key, value in operands.items():
+                                if key.lower() == "aws:securetransport" and str(value).lower() == "false":
+                                    secure_transport_false = True
+                vpce_expected = None
+                if isinstance(condition, dict):
+                    for _operator, operands in condition.items():
+                        if isinstance(operands, dict):
+                            for key, value in operands.items():
+                                if key.lower() == "aws:sourcevpce":
+                                    values = _policy_values(value)
+                                    if values:
+                                        vpce_expected = values[0]
+                if secure_transport_false:
+                    denial_description = (
+                        f"Bucket policy statement '{sid}' explicitly denies the observed S3 request "
+                        "(unencrypted HTTP; explicit Deny applies)."
+                    )
+                elif vpce_expected:
+                    denial_description = (
+                        f"Bucket policy statement '{sid}' explicitly denies the observed S3 request "
+                        f"(explicit Deny condition for VPC endpoint '{vpce_expected}')."
+                    )
+                else:
+                    denial_description = (
+                        f"Bucket policy statement '{sid}' explicitly denies the observed S3 request "
+                        "(explicit Deny applies)."
+                    )
                 findings.append(Finding(
-                    description="Bucket policy contains no explicit Deny statements.",
-                    status=FindingStatus.OBSERVED.value,
-                    evidence_ids=[bp_item.id],
+                    description=denial_description,
+                    status=FindingStatus.CONFIRMED.value,
+                    evidence_ids=[policy_item.id] + list(request_context["context_evidence_ids"]),
                     explanation=(
-                        "The inspected bucket policy contains no explicit Deny statements. The 403 AccessDenied "
-                        "is likely caused by missing IAM permissions, KMS key permissions, or an SCP."
+                        "The supported action, resource, principal, and condition checks match the request evidence. "
+                        "This is a limited policy check, not a full AWS IAM evaluation."
                     ),
                 ))
-            else:
-                for stmt in deny_stmts:
-                    sid = stmt.get("Sid", "ExplicitDeny")
-                    cond = stmt.get("Condition", {})
-                    has_vpce = False
-                    vpce_expected: str | None = None
-                    vpce_op: str | None = None
+            elif applies is None:
+                uncertain_deny = True
+                findings.append(Finding(
+                    description=f"Bucket policy statement '{sid}' may deny the observed request; applicability is not fully established.",
+                    status=FindingStatus.SUPPORTED.value,
+                    evidence_ids=[policy_item.id] + list(request_context["context_evidence_ids"]),
+                    explanation=f"{reason} Collect the missing request details or use an AWS policy evaluation tool.",
+                ))
+            elif "aws:SecureTransport" in reason and request_context.get("secure_transport") is True:
+                findings.append(Finding(
+                    description=f"Bucket policy statement '{sid}' enforces TLS, and the observed request used HTTPS.",
+                    status=FindingStatus.OBSERVED.value,
+                    evidence_ids=[policy_item.id],
+                    explanation="This condition does not explain an AccessDenied response for the HTTPS request.",
+                ))
 
-                    if isinstance(cond, dict):
-                        for op_name, op_rules in cond.items():
-                            if isinstance(op_rules, dict):
-                                for cond_key, cond_val in op_rules.items():
-                                    if cond_key.lower() == "aws:sourcevpce":
-                                        has_vpce = True
-                                        vpce_expected = str(cond_val)
-                                        vpce_op = op_name
-                                    elif cond_key.lower() == "aws:securetransport":
-                                        is_deny_unencrypted = str(cond_val).lower() == "false"
-                                        if is_deny_unencrypted:
-                                            if caller_is_https is False:
-                                                findings.append(Finding(
-                                                    description=f"Bucket policy statement '{sid}' explicitly denies unencrypted HTTP requests.",
-                                                    status=FindingStatus.CONFIRMED.value,
-                                                    evidence_ids=[bp_item.id] + [c.id for c in caller_context_items],
-                                                    explanation="Caller made an unencrypted HTTP request, triggering aws:SecureTransport: false Deny.",
-                                                ))
-                                            elif caller_is_https is True:
-                                                findings.append(Finding(
-                                                    description=f"Bucket policy statement '{sid}' enforces TLS, but caller is using HTTPS.",
-                                                    status=FindingStatus.OBSERVED.value,
-                                                    evidence_ids=[bp_item.id],
-                                                    explanation="The SecureTransport condition is satisfied by caller HTTPS transport.",
-                                                ))
-                                            else:
-                                                findings.append(Finding(
-                                                    description=f"Bucket policy statement '{sid}' explicitly denies unencrypted HTTP traffic.",
-                                                    status=FindingStatus.SUPPORTED.value,
-                                                    evidence_ids=[bp_item.id],
-                                                    explanation="Bucket policy requires TLS (aws:SecureTransport: false). Verify whether caller used HTTP.",
-                                                ))
+        if not matched_deny and not uncertain_deny and not any(
+            finding.evidence_ids == [policy_item.id]
+            and finding.status == FindingStatus.OBSERVED.value
+            for finding in findings
+        ):
+            findings.append(Finding(
+                description="No inspected bucket-policy Deny statement was shown to match the request evidence.",
+                status=FindingStatus.OBSERVED.value,
+                evidence_ids=[policy_item.id],
+                explanation="The available action, resource, principal, or condition data ruled out the inspected Deny statements; investigate other policy layers.",
+            ))
 
-                    if has_vpce and vpce_expected:
-                        is_not_equals = "not" in vpce_op.lower() if vpce_op else False
-                        if is_not_equals:
-                            if caller_is_external or (caller_vpce is not None and caller_vpce.lower() != vpce_expected.lower()):
-                                findings.append(Finding(
-                                    description=(
-                                        f"Bucket policy statement '{sid}' contains an explicit Deny for requests not originating "
-                                        f"from VPC endpoint '{vpce_expected}'."
-                                    ),
-                                    status=FindingStatus.CONFIRMED.value,
-                                    evidence_ids=[bp_item.id] + [c.id for c in caller_context_items],
-                                    explanation=(
-                                        f"The bucket policy enforces an explicit Deny with StringNotEquals for "
-                                        f"'{vpce_expected}'. Caller evidence confirms the request originated from "
-                                        f"{'an external network with no VPC endpoint' if caller_is_external else f'endpoint {caller_vpce}'}."
-                                    ),
-                                ))
-                            elif caller_vpce is not None and caller_vpce.lower() == vpce_expected.lower():
-                                findings.append(Finding(
-                                    description=f"Bucket policy statement '{sid}' restricts access to VPC endpoint '{vpce_expected}'.",
-                                    status=FindingStatus.OBSERVED.value,
-                                    evidence_ids=[bp_item.id] + [c.id for c in caller_context_items],
-                                    explanation="Caller matches the required VPC endpoint; this statement does not trigger Deny.",
-                                ))
-                            else:
-                                findings.append(Finding(
-                                    description=f"Bucket policy statement '{sid}' restricts access to VPC endpoint '{vpce_expected}'.",
-                                    status=FindingStatus.SUPPORTED.value,
-                                    evidence_ids=[bp_item.id],
-                                    explanation=(
-                                        f"The bucket policy contains an explicit Deny for requests not from '{vpce_expected}'. "
-                                        f"Caller network origin is not verified in available evidence; confirm caller's VPC endpoint."
-                                    ),
-                                ))
-                        else:
-                            # StringEquals
-                            if caller_vpce is not None and caller_vpce.lower() == vpce_expected.lower():
-                                findings.append(Finding(
-                                    description=f"Bucket policy statement '{sid}' contains an explicit Deny for VPC endpoint '{vpce_expected}'.",
-                                    status=FindingStatus.CONFIRMED.value,
-                                    evidence_ids=[bp_item.id] + [c.id for c in caller_context_items],
-                                    explanation=f"Caller request originated from '{vpce_expected}', matching the explicit Deny rule.",
-                                ))
-                            elif caller_vpce is not None:
-                                findings.append(Finding(
-                                    description=f"Bucket policy statement '{sid}' denies VPC endpoint '{vpce_expected}'.",
-                                    status=FindingStatus.OBSERVED.value,
-                                    evidence_ids=[bp_item.id],
-                                    explanation="Caller does not match the denied VPC endpoint.",
-                                ))
-                            else:
-                                findings.append(Finding(
-                                    description=f"Bucket policy statement '{sid}' explicitly denies VPC endpoint '{vpce_expected}'.",
-                                    status=FindingStatus.SUPPORTED.value,
-                                    evidence_ids=[bp_item.id],
-                                    explanation="Bucket policy denies requests matching this endpoint; caller endpoint unverified in evidence.",
-                                ))
-                    elif not cond:
-                        findings.append(Finding(
-                            description=f"Bucket policy statement '{sid}' contains an unconditional explicit Deny.",
-                            status=FindingStatus.CONFIRMED.value,
-                            evidence_ids=[bp_item.id],
-                            explanation="The statement unconditionally denies access to the targeted resource.",
-                        ))
-        else:
-            # Fallback if policy is not valid JSON
-            obs_lower = obs.lower()
-            if '"effect": "deny"' in obs_lower or '"effect":"deny"' in obs_lower:
-                if "aws:sourcevpce" in obs_lower:
-                    vpce_match = re.search(r'"aws:sourcevpce":\s*"([^"]+)"', obs, re.IGNORECASE)
-                    vpce_id = vpce_match.group(1) if vpce_match else "specified VPC endpoint"
-                    if caller_is_external:
-                        findings.append(Finding(
-                            description=f"Bucket policy contains an explicit Deny for requests not originating from VPC endpoint '{vpce_id}'.",
-                            status=FindingStatus.CONFIRMED.value,
-                            evidence_ids=[bp_item.id] + [c.id for c in caller_context_items],
-                            explanation=f"Caller originated externally without VPC endpoint '{vpce_id}'.",
-                        ))
-                    else:
-                        findings.append(Finding(
-                            description=f"Bucket policy contains an explicit Deny for requests not originating from VPC endpoint '{vpce_id}'.",
-                            status=FindingStatus.SUPPORTED.value,
-                            evidence_ids=[bp_item.id],
-                            explanation="Caller network context is unverified in evidence.",
-                        ))
-                else:
-                    findings.append(Finding(
-                        description="Bucket policy contains an explicit Deny statement.",
-                        status=FindingStatus.SUPPORTED.value,
-                        evidence_ids=[bp_item.id],
-                        explanation="Explicit Deny present in bucket policy. Verify action, resource, and conditions.",
-                    ))
-
-    # Step 4: IAM Permissions findings
     for item in iam_items:
         findings.append(Finding(
-            description="Caller identity lacks required IAM permissions.",
+            description="Evidence indicates the caller lacks a required identity-based permission.",
             status=FindingStatus.SUPPORTED.value,
             evidence_ids=[item.id],
-            explanation="The requesting IAM user or role does not have an identity policy permitting this action.",
+            explanation="Verify the caller identity, action, resource, and applicable identity policy.",
         ))
 
-    # Step 5: KMS findings
     for item in kms_items:
         findings.append(Finding(
-            description="KMS key policy does not authorize kms:Decrypt for this principal.",
+            description="Evidence indicates a possible KMS decryption permission problem.",
             status=FindingStatus.SUPPORTED.value,
             evidence_ids=[item.id],
-            explanation="The S3 object is encrypted with SSE-KMS, but the caller lacks KMS decryption rights.",
+            explanation="Verify the KMS key policy, grants, identity policy, and the actual operation required.",
         ))
 
     if not findings:
         findings.append(Finding(
             description="Insufficient evidence to evaluate S3 access denial.",
             status=FindingStatus.NEEDS_INVESTIGATION.value,
-            explanation="Capture exact S3 API command output and 'aws s3api get-bucket-policy'.",
+            explanation="Capture the exact S3 API operation, target resource, caller context, and complete bucket policy.",
         ))
-
     return findings
 
 
